@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import '../../widgets/navigation/bottom_navigation_bar.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import '../login/login_page.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -60,7 +59,9 @@ void _goToNextPage() {
       transitionDuration: const Duration(milliseconds: 900),
       reverseTransitionDuration: const Duration(milliseconds: 900),
       pageBuilder: (context, animation, secondaryAnimation) {
-        return const LoginPage();
+        return const SikapBottomNavigationBar(
+          isAdmin: false,
+        );
       },
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         return child;

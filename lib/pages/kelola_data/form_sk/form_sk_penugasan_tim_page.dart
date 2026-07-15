@@ -1,0 +1,87 @@
+import 'package:flutter/material.dart';
+
+class FormSkPenugasanTimPage extends StatefulWidget {
+  const FormSkPenugasanTimPage({super.key});
+
+  @override
+  State<FormSkPenugasanTimPage> createState() => _FormSkPenugasanTimPageState();
+}
+
+class _FormSkPenugasanTimPageState extends State<FormSkPenugasanTimPage> {
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
+  bool _isLoading = false;
+
+  Future<void> _simpanData() async {
+    FocusScope.of(context).unfocus();
+
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // TODO: Tambahkan proses upload PDF dan penyimpanan Firestore.
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Terjadi kesalahan: $error'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Form SK Penugasan Tim'),
+      ),
+      body: SafeArea(
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.all(24),
+            children: [
+              const Text(
+                'Form SK Penugasan Tim',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // TODO: Tambahkan field khusus halaman ini.
+
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: _isLoading ? null : _simpanData,
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text('Simpan'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

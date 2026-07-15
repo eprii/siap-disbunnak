@@ -38,10 +38,12 @@ class _SikapBottomNavigationBarState extends State<SikapBottomNavigationBar> {
       ];
     }
 
-    return const <Widget>[
-      HomePage(),
-      UploadSKPage(),
-      ProfilePage(),
+  return <Widget>[
+    const HomePage(),
+      UploadSKPage(
+        onBack: () => _onItemSelected(0),
+      ),
+      const ProfilePage(),
     ];
   }
 
