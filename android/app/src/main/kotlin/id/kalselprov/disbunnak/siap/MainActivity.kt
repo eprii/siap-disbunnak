@@ -1,4 +1,4 @@
-package com.example.sikap_disbunnak
+package id.kalselprov.disbunnak.siap
 
 import io.flutter.embedding.android.FlutterActivity
 

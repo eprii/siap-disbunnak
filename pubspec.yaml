@@ -39,11 +39,16 @@ dependencies:
   firebase_auth: ^6.5.4
   cloud_firestore: ^6.6.0
   iconify_flutter: ^0.0.7
+  supabase_flutter: ^2.16.0
+  file_picker: ^11.0.2
+  pdfrx: ^2.2.24
   
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+  flutter_launcher_icons: ^0.14.4
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -55,11 +60,29 @@ dev_dependencies:
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
+
 # The following section is specific to Flutter packages.
 flutter:
   uses-material-design: true
   assets:
     - assets/images/logo/LOGO_KALSEL.png
+    - assets/images/background/background_image.png
+    - assets/images/logo/LOGO_SIAP.png
+    - assets/images/icon/ic_launcher.png
+    - assets/images/icon/ic_launcher_foreground.png
+    - assets/images/icon/ic_launcher_background.png
+    - assets/images/icon/ic_launcher_monochrome.png
+
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+
+  image_path: "assets/images/icon/ic_launcher.png"
+
+  adaptive_icon_background: "assets/images/icon/ic_launcher_background.png"
+  adaptive_icon_foreground: "assets/images/icon/ic_launcher_foreground.png"
+  adaptive_icon_monochrome: "assets/images/icon/ic_launcher_monochrome.png"
 
 
   # An image asset can refer to one or more resolution-specific "variants", see

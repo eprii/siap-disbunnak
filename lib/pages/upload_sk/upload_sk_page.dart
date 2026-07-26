@@ -3,10 +3,7 @@ import 'package:flutter/material.dart';
 class UploadSKPage extends StatefulWidget {
   final VoidCallback onBack;
 
-  const UploadSKPage({
-    super.key,
-    required this.onBack,
-  });
+  const UploadSKPage({super.key, required this.onBack});
 
   @override
   State<UploadSKPage> createState() => _UploadSKPageState();
@@ -213,10 +210,7 @@ class _UploadSKPageState extends State<UploadSKPage> {
                 SizedBox(height: 2),
                 Text(
                   'Sistem Informasi Kepegawaian dan Arsip Pegawai',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.black87,
-                  ),
+                  style: TextStyle(fontSize: 11, color: Colors.black87),
                 ),
               ],
             ),
@@ -227,32 +221,28 @@ class _UploadSKPageState extends State<UploadSKPage> {
   }
 
   Widget _buildPageTitle() {
-  return Row(
-    children: [
-      InkWell(
-        onTap: widget.onBack,
-        borderRadius: BorderRadius.circular(20),
-        child: const Padding(
-          padding: EdgeInsets.all(4),
-          child: Icon(
-            Icons.arrow_back,
-            size: 20,
-            color: _primaryColor,
+    return Row(
+      children: [
+        InkWell(
+          onTap: widget.onBack,
+          borderRadius: BorderRadius.circular(20),
+          child: const Padding(
+            padding: EdgeInsets.all(4),
+            child: Icon(Icons.arrow_back, size: 20, color: _primaryColor),
           ),
         ),
-      ),
-      const SizedBox(width: 8),
-      const Text(
-        'Tambah Surat Keputusan',
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-          color: Colors.black87,
+        const SizedBox(width: 8),
+        const Text(
+          'Tambah Surat Keputusan',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.black87,
+          ),
         ),
-      ),
-    ],
-  );
-}
+      ],
+    );
+  }
 
   Widget _buildFormCard() {
     return Container(
@@ -320,10 +310,7 @@ class _UploadSKPageState extends State<UploadSKPage> {
 
             _buildLabel('Tanggal SK'),
             const SizedBox(height: 7),
-            SizedBox(
-              width: 175,
-              child: _buildDateField(),
-            ),
+            SizedBox(width: 175, child: _buildDateField()),
 
             const SizedBox(height: 22),
 
@@ -336,10 +323,7 @@ class _UploadSKPageState extends State<UploadSKPage> {
             const SizedBox(height: 4),
             const Text(
               'Tersimpan sebagai riwayat, tidak berubah walau jabatan Anda berubah nanti.',
-              style: TextStyle(
-                fontSize: 9,
-                color: Colors.black45,
-              ),
+              style: TextStyle(fontSize: 9, color: Colors.black45),
             ),
 
             const SizedBox(height: 18),
@@ -387,13 +371,8 @@ class _UploadSKPageState extends State<UploadSKPage> {
       keyboardType: keyboardType,
       maxLines: maxLines,
       minLines: minLines,
-      style: const TextStyle(
-        fontSize: 14,
-        color: Colors.black,
-      ),
-      decoration: _inputDecoration(
-        hintText: hintText,
-      ),
+      style: const TextStyle(fontSize: 14, color: Colors.black),
+      decoration: _inputDecoration(hintText: hintText),
       validator: (value) {
         if (value == null || value.trim().isEmpty) {
           return 'Wajib diisi';
@@ -408,29 +387,18 @@ class _UploadSKPageState extends State<UploadSKPage> {
     return DropdownButtonFormField<String>(
       initialValue: _selectedJenisSK,
       isExpanded: true,
-      icon: const Icon(
-        Icons.keyboard_arrow_down_rounded,
-        color: Colors.black,
-      ),
-      decoration: _inputDecoration(
-        hintText: '',
-      ),
+      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.black),
+      decoration: _inputDecoration(hintText: ''),
       hint: const Text(
         'Pilih jenis SK',
-        style: TextStyle(
-          fontSize: 14,
-          color: Colors.black45,
-        ),
+        style: TextStyle(fontSize: 14, color: Colors.black45),
       ),
       items: _jenisSKList.map((jenisSK) {
         return DropdownMenuItem<String>(
           value: jenisSK,
           child: Text(
             jenisSK,
-            style: const TextStyle(
-              fontSize: 14,
-              color: Colors.black,
-            ),
+            style: const TextStyle(fontSize: 14, color: Colors.black),
           ),
         );
       }).toList(),
@@ -454,10 +422,7 @@ class _UploadSKPageState extends State<UploadSKPage> {
       controller: _tanggalSKController,
       readOnly: true,
       onTap: _selectDate,
-      style: const TextStyle(
-        fontSize: 13,
-        color: Colors.black,
-      ),
+      style: const TextStyle(fontSize: 13, color: Colors.black),
       decoration: _inputDecoration(
         hintText: '',
         suffixIcon: const Icon(
@@ -482,45 +447,27 @@ class _UploadSKPageState extends State<UploadSKPage> {
   }) {
     return InputDecoration(
       hintText: hintText,
-      hintStyle: const TextStyle(
-        fontSize: 13,
-        color: Colors.black38,
-      ),
+      hintStyle: const TextStyle(fontSize: 13, color: Colors.black38),
       suffixIcon: suffixIcon,
       filled: true,
       fillColor: Colors.white,
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 12,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(
-          color: Colors.black87,
-          width: 1,
-        ),
+        borderSide: const BorderSide(color: Colors.black87, width: 1),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(
-          color: _primaryColor,
-          width: 1.5,
-        ),
+        borderSide: const BorderSide(color: _primaryColor, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(
-          color: Colors.red,
-          width: 1,
-        ),
+        borderSide: const BorderSide(color: Colors.red, width: 1),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(11),
-        borderSide: const BorderSide(
-          color: Colors.red,
-          width: 1.5,
-        ),
+        borderSide: const BorderSide(color: Colors.red, width: 1.5),
       ),
     );
   }
@@ -544,11 +491,7 @@ class _UploadSKPageState extends State<UploadSKPage> {
           child: const Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.cloud_upload_rounded,
-                size: 24,
-                color: Colors.black,
-              ),
+              Icon(Icons.cloud_upload_rounded, size: 24, color: Colors.black),
               SizedBox(height: 8),
               Text(
                 'Ketuk untuk unggah PDF',
@@ -561,10 +504,7 @@ class _UploadSKPageState extends State<UploadSKPage> {
               SizedBox(height: 2),
               Text(
                 'Maks. 10MB',
-                style: TextStyle(
-                  fontSize: 8,
-                  color: Color(0xFF8D1F1F),
-                ),
+                style: TextStyle(fontSize: 8, color: Color(0xFF8D1F1F)),
               ),
             ],
           ),
@@ -585,21 +525,13 @@ class _UploadSKPageState extends State<UploadSKPage> {
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.black,
             backgroundColor: Colors.white,
-            side: const BorderSide(
-              color: Colors.black,
-              width: 1,
-            ),
+            side: const BorderSide(color: Colors.black, width: 1),
             minimumSize: const Size(88, 38),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
           ),
-          child: const Text(
-            'Batal',
-            style: TextStyle(
-              fontSize: 13,
-            ),
-          ),
+          child: const Text('Batal', style: TextStyle(fontSize: 13)),
         ),
         const SizedBox(width: 14),
         FilledButton(
@@ -614,10 +546,7 @@ class _UploadSKPageState extends State<UploadSKPage> {
           ),
           child: const Text(
             'Simpan',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
           ),
         ),
       ],
@@ -629,10 +558,7 @@ class _DashedBorderPainter extends CustomPainter {
   final Color color;
   final double radius;
 
-  const _DashedBorderPainter({
-    required this.color,
-    required this.radius,
-  });
+  const _DashedBorderPainter({required this.color, required this.radius});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -643,10 +569,7 @@ class _DashedBorderPainter extends CustomPainter {
 
     final Path path = Path()
       ..addRRect(
-        RRect.fromRectAndRadius(
-          Offset.zero & size,
-          Radius.circular(radius),
-        ),
+        RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)),
       );
 
     const double dashLength = 4;
@@ -656,18 +579,11 @@ class _DashedBorderPainter extends CustomPainter {
       double distance = 0;
 
       while (distance < metric.length) {
-        final double nextDistance =
-            distance + dashLength < metric.length
-                ? distance + dashLength
-                : metric.length;
+        final double nextDistance = distance + dashLength < metric.length
+            ? distance + dashLength
+            : metric.length;
 
-        canvas.drawPath(
-          metric.extractPath(
-            distance,
-            nextDistance,
-          ),
-          paint,
-        );
+        canvas.drawPath(metric.extractPath(distance, nextDistance), paint);
 
         distance += dashLength + dashSpace;
       }
@@ -676,7 +592,6 @@ class _DashedBorderPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) {
-    return oldDelegate.color != color ||
-        oldDelegate.radius != radius;
+    return oldDelegate.color != color || oldDelegate.radius != radius;
   }
 }

@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1008333556563:android:c534402c9816765aaaafa6",
+        "mobilesdk_app_id": "1:1008333556563:android:4487009fcacb617daaafa6",
         "android_client_info": {
-          "package_name": "com.example.sikap_disbunnak"
+          "package_name": "id.kalselprov.disbunnak.siap"
         }
       },
       "oauth_client": [],

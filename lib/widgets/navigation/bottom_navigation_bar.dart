@@ -1,11 +1,15 @@
+// SIAP_NAV_WHITE_PLAIN_V4
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:iconify_flutter/iconify_flutter.dart';
 import 'package:iconify_flutter/icons/material_symbols.dart';
 
 import '../../pages/home/home_page.dart';
+import '../../pages/kelola_data/kelola_data_page.dart';
 import '../../pages/profile/profile_page.dart';
 import '../../pages/saved_sk/admin/saved_sk_page.dart';
-import '../../pages/upload_sk/upload_sk_page.dart';
 
 const String _iconamoonProfileFill = '''
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
@@ -13,197 +17,426 @@ const String _iconamoonProfileFill = '''
 </svg>
 ''';
 
-class SikapBottomNavigationBar extends StatefulWidget {
+const double _siapBarHeight = 80;
+const double _siapBarBottomMargin = 12;
+const double _siapBottomGlassExtraHeight = 1;
+
+class SiapNavigationController {
+  SiapNavigationController._();
+
+  static final ValueNotifier<int> selectedIndex = ValueNotifier<int>(0);
+
+  static void selectTab(int index) {
+    if (index < 0 || index > 2) return;
+    if (selectedIndex.value == index) return;
+    selectedIndex.value = index;
+  }
+}
+
+class SiapBottomNavigationBar extends StatefulWidget {
   final bool isAdmin;
 
-  const SikapBottomNavigationBar({
+  const SiapBottomNavigationBar({
     super.key,
     this.isAdmin = false,
   });
 
   @override
-  State<SikapBottomNavigationBar> createState() =>
-      _SikapBottomNavigationBarState();
+  State<SiapBottomNavigationBar> createState() =>
+      _SiapBottomNavigationBarState();
 }
 
-class _SikapBottomNavigationBarState extends State<SikapBottomNavigationBar> {
-  int _selectedIndex = 0;
+class _SiapBottomNavigationBarState
+    extends State<SiapBottomNavigationBar> {
+  static const String _backgroundAsset =
+      'assets/images/background/background_image.png';
 
-  List<Widget> get _pages {
+  late final List<Widget> _pages;
+  late final List<_SiapNavItem> _navItems;
+
+  int _selectedIndex = SiapNavigationController.selectedIndex.value;
+
+  @override
+  void initState() {
+    super.initState();
+    SiapNavigationController.selectedIndex.addListener(
+      _syncSelectedIndex,
+    );
+
     if (widget.isAdmin) {
-      return const <Widget>[
+      _pages = const <Widget>[
         HomePage(),
         SavedSKPage(),
         ProfilePage(),
       ];
+
+      _navItems = const <_SiapNavItem>[
+        _SiapNavItem(
+          icon: MaterialSymbols.home_rounded,
+          label: 'Home',
+          iconSize: 28,
+        ),
+        _SiapNavItem(
+          icon: MaterialSymbols.bookmark_rounded,
+          label: 'Data Tersimpan',
+          iconSize: 28,
+        ),
+        _SiapNavItem(
+          icon: _iconamoonProfileFill,
+          label: 'Profil',
+          iconSize: 29,
+        ),
+      ];
+      return;
     }
 
-  return <Widget>[
-    const HomePage(),
-      UploadSKPage(
-        onBack: () => _onItemSelected(0),
+    _pages = const <Widget>[
+      HomePage(),
+      KelolaDataPage(),
+      ProfilePage(),
+    ];
+
+    _navItems = const <_SiapNavItem>[
+      _SiapNavItem(
+        icon: MaterialSymbols.home_rounded,
+        label: 'Home',
+        iconSize: 28,
       ),
-      const ProfilePage(),
+      _SiapNavItem(
+        icon: MaterialSymbols.add_rounded,
+        label: 'Kelola Data',
+        iconSize: 36,
+      ),
+      _SiapNavItem(
+        icon: _iconamoonProfileFill,
+        label: 'Profil',
+        iconSize: 29,
+      ),
     ];
   }
 
-  List<_SikapNavItem> get _navItems {
-    if (widget.isAdmin) {
-      return const <_SikapNavItem>[
-        _SikapNavItem(
-          icon: MaterialSymbols.home_rounded,
-          label: 'Home',
-        ),
-        _SikapNavItem(
-          icon: MaterialSymbols.bookmark_rounded,
-          label: 'SK Tersimpan',
-        ),
-        _SikapNavItem(
-          icon: _iconamoonProfileFill,
-          label: 'Profil',
-        ),
-      ];
-    }
+  @override
+  void dispose() {
+    SiapNavigationController.selectedIndex.removeListener(
+      _syncSelectedIndex,
+    );
+    super.dispose();
+  }
 
-    return const <_SikapNavItem>[
-      _SikapNavItem(
-        icon: MaterialSymbols.home_rounded,
-        label: 'Home',
-      ),
-      _SikapNavItem(
-        icon: MaterialSymbols.add_rounded,
-        label: 'Upload SK',
-      ),
-      _SikapNavItem(
-        icon: _iconamoonProfileFill,
-        label: 'Profil',
-      ),
-    ];
+  void _syncSelectedIndex() {
+    final int nextIndex =
+        SiapNavigationController.selectedIndex.value;
+    if (!mounted || nextIndex == _selectedIndex) return;
+
+    setState(() {
+      _selectedIndex = nextIndex;
+    });
   }
 
   void _onItemSelected(int index) {
-    if (_selectedIndex == index) return;
-
-    setState(() {
-      _selectedIndex = index;
-    });
+    SiapNavigationController.selectTab(index);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: IndexedStack(
-          index: _selectedIndex,
-          children: _pages,
-        ),
+    final double systemBottom =
+        MediaQuery.viewPaddingOf(context).bottom;
+
+    final double bottomGlassHeight =
+        _siapBarHeight +
+        _siapBarBottomMargin +
+        systemBottom +
+        _siapBottomGlassExtraHeight;
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.dark,
+        systemNavigationBarDividerColor: Colors.transparent,
       ),
-      bottomNavigationBar: _SikapBottomNavBar(
-        selectedIndex: _selectedIndex,
-        items: _navItems,
-        onItemSelected: _onItemSelected,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        resizeToAvoidBottomInset: false,
+        body: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            Positioned.fill(
+              child: Image.asset(
+                _backgroundAsset,
+                fit: BoxFit.fill,
+                alignment: Alignment.center,
+                filterQuality: FilterQuality.high,
+              ),
+            ),
+            Positioned.fill(
+              child: IndexedStack(
+                index: _selectedIndex,
+                sizing: StackFit.expand,
+                children: _pages,
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: bottomGlassHeight,
+              child: const IgnorePointer(
+                child: _BottomGlassGradient(),
+              ),
+            ),
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: systemBottom + _siapBarBottomMargin,
+              height: _siapBarHeight,
+              child: _SiapFloatingBottomNavBar(
+                selectedIndex: _selectedIndex,
+                items: _navItems,
+                onItemSelected: _onItemSelected,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _SikapBottomNavBar extends StatelessWidget {
+class SiapPageBottomNavigationBar extends StatelessWidget {
   final int selectedIndex;
-  final List<_SikapNavItem> items;
+  final bool isAdmin;
+  final bool showBackgroundLayer;
+
+  const SiapPageBottomNavigationBar({
+    super.key,
+    required this.selectedIndex,
+    this.isAdmin = false,
+    this.showBackgroundLayer = false,
+  });
+
+  List<_SiapNavItem> get _items {
+    if (isAdmin) {
+      return const <_SiapNavItem>[
+        _SiapNavItem(
+          icon: MaterialSymbols.home_rounded,
+          label: 'Home',
+          iconSize: 28,
+        ),
+        _SiapNavItem(
+          icon: MaterialSymbols.bookmark_rounded,
+          label: 'Data Tersimpan',
+          iconSize: 28,
+        ),
+        _SiapNavItem(
+          icon: _iconamoonProfileFill,
+          label: 'Profil',
+          iconSize: 29,
+        ),
+      ];
+    }
+
+    return const <_SiapNavItem>[
+      _SiapNavItem(
+        icon: MaterialSymbols.home_rounded,
+        label: 'Home',
+        iconSize: 28,
+      ),
+      _SiapNavItem(
+        icon: MaterialSymbols.add_rounded,
+        label: 'Kelola Data',
+        iconSize: 36,
+      ),
+      _SiapNavItem(
+        icon: _iconamoonProfileFill,
+        label: 'Profil',
+        iconSize: 29,
+      ),
+    ];
+  }
+
+  void _onItemSelected(BuildContext context, int index) {
+    SiapNavigationController.selectTab(index);
+    Navigator.of(context).popUntil((Route<dynamic> route) => route.isFirst);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double systemBottom =
+        MediaQuery.viewPaddingOf(context).bottom;
+    final double totalHeight =
+        _siapBarHeight +
+        _siapBarBottomMargin +
+        systemBottom +
+        _siapBottomGlassExtraHeight;
+
+    return SizedBox(
+      height: totalHeight,
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          if (showBackgroundLayer)
+            const Positioned.fill(
+              child: IgnorePointer(
+                child: _BottomGlassGradient(),
+              ),
+            ),
+          Positioned(
+            left: 20,
+            right: 20,
+            bottom: systemBottom + _siapBarBottomMargin,
+            height: _siapBarHeight,
+            child: _SiapFloatingBottomNavBar(
+              selectedIndex: selectedIndex,
+              items: _items,
+              onItemSelected: (int index) {
+                _onItemSelected(context, index);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BottomGlassGradient extends StatelessWidget {
+  const _BottomGlassGradient();
+
+  static const double _topRadius = 32;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.only(
+        topLeft: Radius.circular(_topRadius),
+        topRight: Radius.circular(_topRadius),
+      ),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(
+          sigmaX: 1.5,
+          sigmaY: 1.5,
+        ),
+        child: const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: <Color>[
+                Colors.transparent,
+                Color(0x24B9A36E),
+                Color(0x58D4C294),
+                Color(0xA8ECE0C2),
+                Color(0xF2FFF9EA),
+              ],
+              stops: <double>[
+                0.0,
+                0.24,
+                0.50,
+                0.76,
+                1.0,
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SiapFloatingBottomNavBar extends StatelessWidget {
+  final int selectedIndex;
+  final List<_SiapNavItem> items;
   final ValueChanged<int> onItemSelected;
 
-  const _SikapBottomNavBar({
+  const _SiapFloatingBottomNavBar({
     required this.selectedIndex,
     required this.items,
     required this.onItemSelected,
   });
 
-  static const double _baseHeight = 72;
-  static const double _baseCircleSize = 54;
-  static const double _baseIconSize = 35;
+  static const double _activeCircleSize = 46;
 
-  static const Duration _animationDuration = Duration(milliseconds: 500);
-
-  static const Color _backgroundColor = Color(0xFFF5EEDC);
-  static const Color _selectedCircleColor = Color(0xFFB4C19A);
-  static const Color _borderColor = Color(0xFF1F2417);
-
-  static const double _referenceDevicePixelRatio = 2.75;
-
-  double _lockedSize(BuildContext context, double value) {
-    final double currentDevicePixelRatio =
-        MediaQuery.devicePixelRatioOf(context);
-
-    final double scale =
-        (_referenceDevicePixelRatio / currentDevicePixelRatio)
-            .clamp(0.85, 1.15);
-
-    return value * scale;
-  }
+  static const Color _activeColor = Color(0xFF269527);
+  static const Color _inactiveColor = Color(0xFF2F512C);
 
   @override
   Widget build(BuildContext context) {
-
-    debugPrint(
-      'DPR: ${MediaQuery.devicePixelRatioOf(context)}',
-    );
-    
-    final double height = _lockedSize(context, _baseHeight);
-    final double circleSize = _lockedSize(context, _baseCircleSize);
-    final double iconSize = _lockedSize(context, _baseIconSize);
-
     return Container(
-      decoration: const BoxDecoration(
-        color: _backgroundColor,
-        border: Border(
-          top: BorderSide(
-            color: _borderColor,
-            width: 1,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(25),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x26000000),
+            blurRadius: 8,
+            offset: Offset(0, 4),
           ),
-        ),
+        ],
       ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: height,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(25),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFCF4),
+            borderRadius: BorderRadius.circular(25),
+            border: Border.all(
+              color: const Color(0x78FFFFFF),
+              width: 1,
+            ),
+          ),
           child: LayoutBuilder(
-            builder: (context, constraints) {
-              final double itemWidth = constraints.maxWidth / items.length;
-              final double circleLeft =
+            builder: (
+              BuildContext context,
+              BoxConstraints constraints,
+            ) {
+              final double itemWidth =
+                  constraints.maxWidth / items.length;
+
+              final double activeLeft =
                   (itemWidth * selectedIndex) +
-                  ((itemWidth - circleSize) / 2);
+                  ((itemWidth - _activeCircleSize) / 2);
 
               return Stack(
-                children: [
+                clipBehavior: Clip.none,
+                children: <Widget>[
                   AnimatedPositioned(
-                    duration: _animationDuration,
-                    curve: Curves.easeOutCubic,
-                    left: circleLeft,
-                    top: (height - circleSize) / 2,
+                    duration: const Duration(milliseconds: 430),
+                    curve: Curves.easeOutBack,
+                    left: activeLeft,
+                    top: 6,
                     child: Container(
-                      width: circleSize,
-                      height: circleSize,
+                      width: _activeCircleSize,
+                      height: _activeCircleSize,
                       decoration: const BoxDecoration(
+                        color: _activeColor,
                         shape: BoxShape.circle,
-                        color: _selectedCircleColor,
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color: Color(0x32000000),
+                            blurRadius: 9,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                   Row(
-                    children: List.generate(items.length, (index) {
-                      final _SikapNavItem item = items[index];
-
-                      return Expanded(
-                        child: _SikapBottomNavItem(
-                          icon: item.icon,
-                          label: item.label,
-                          active: selectedIndex == index,
-                          iconSize: iconSize,
-                          onTap: () => onItemSelected(index),
-                        ),
-                      );
-                    }),
+                    children: List<Widget>.generate(
+                      items.length,
+                      (int index) {
+                        return Expanded(
+                          child: _SiapFloatingNavItem(
+                            item: items[index],
+                            active: selectedIndex == index,
+                            activeColor: _activeColor,
+                            inactiveColor: _inactiveColor,
+                            onTap: () => onItemSelected(index),
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ],
               );
@@ -213,42 +446,82 @@ class _SikapBottomNavBar extends StatelessWidget {
       ),
     );
   }
-
-  
 }
 
-class _SikapBottomNavItem extends StatelessWidget {
-  final String icon;
-  final String label;
+class _SiapFloatingNavItem extends StatelessWidget {
+  final _SiapNavItem item;
   final bool active;
-  final double iconSize;
+  final Color activeColor;
+  final Color inactiveColor;
   final VoidCallback onTap;
 
-  const _SikapBottomNavItem({
-    required this.icon,
-    required this.label,
+  const _SiapFloatingNavItem({
+    required this.item,
     required this.active,
-    required this.iconSize,
+    required this.activeColor,
+    required this.inactiveColor,
     required this.onTap,
   });
-
-  static const Color _iconColor = Color(0xFF4A5333);
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: label,
+      label: item.label,
       button: true,
       selected: active,
       child: InkWell(
         onTap: onTap,
         splashColor: Colors.transparent,
         highlightColor: Colors.transparent,
-        child: Center(
-          child: Iconify(
-            icon,
-            size: iconSize,
-            color: _iconColor,
+        hoverColor: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(4, 6, 4, 3),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: <Widget>[
+              SizedBox(
+                height: 46,
+                child: Center(
+                  child: AnimatedScale(
+                    scale: active ? 1 : 0.92,
+                    duration: const Duration(milliseconds: 320),
+                    curve: Curves.easeOutBack,
+                    child: Iconify(
+                      item.icon,
+                      size: item.iconSize,
+                      color: active ? Colors.white : inactiveColor,
+                    ),
+                  ),
+                ),
+              ),
+              AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w500,
+                  color: active
+                      ? activeColor
+                      : activeColor.withOpacity(0),
+                ),
+                child: Text(
+                  item.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(height: 2),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+                width: active ? 46 : 0,
+                height: 2,
+                decoration: BoxDecoration(
+                  color: activeColor,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -256,12 +529,14 @@ class _SikapBottomNavItem extends StatelessWidget {
   }
 }
 
-class _SikapNavItem {
+class _SiapNavItem {
   final String icon;
   final String label;
+  final double iconSize;
 
-  const _SikapNavItem({
+  const _SiapNavItem({
     required this.icon,
     required this.label,
+    required this.iconSize,
   });
 }

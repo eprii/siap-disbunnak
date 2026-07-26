@@ -8,10 +8,7 @@ class SavedSKPage extends StatelessWidget {
     return const Center(
       child: Text(
         'SK Tersimpan',
-        style: TextStyle(
-          fontSize: 24,
-          fontWeight: FontWeight.w600,
-        ),
+        style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
       ),
     );
   }

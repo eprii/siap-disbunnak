@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class UsersModel {
+  final String id;
   final String uid;
   final String username;
   final String nama_lengkap;
@@ -9,10 +10,11 @@ class UsersModel {
   final String no_telepon;
   final String role;
   final String status_akun;
-  final String created_at;
-  final String updated_at;
+  final Timestamp created_at;
+  final Timestamp updated_at;
 
-  UsersModel({
+  const UsersModel({
+    this.id = '',
     required this.uid,
     required this.username,
     required this.nama_lengkap,
@@ -25,18 +27,21 @@ class UsersModel {
     required this.updated_at,
   });
 
-  factory UsersModel.fromDocument(DocumentSnapshot doc) {
+  factory UsersModel.fromDocument(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data() ?? <String, dynamic>{};
+
     return UsersModel(
-      uid: doc['uid'] ?? '',
-      username: doc['username'] ?? '',
-      nama_lengkap: doc['nama_lengkap'] ?? '',
-      nip: doc['nip'] ?? '',
-      email: doc['email'] ?? '',
-      no_telepon: doc['no_telepon'] ?? '',
-      role: doc['role'] ?? '',
-      status_akun: doc['status_akun'] ?? '',
-      created_at: doc['created_at'] ?? '',
-    updated_at: doc['updated_at'] ?? '',
+      id: doc.id,
+      uid: _readString(data['uid']),
+      username: _readString(data['username']),
+      nama_lengkap: _readString(data['nama_lengkap']),
+      nip: _readString(data['nip']),
+      email: _readString(data['email']),
+      no_telepon: _readString(data['no_telepon']),
+      role: _readString(data['role']),
+      status_akun: _readString(data['status_akun']),
+      created_at: _readTimestamp(data['created_at']),
+      updated_at: _readTimestamp(data['updated_at']),
     );
   }
 
@@ -54,5 +59,16 @@ class UsersModel {
       'updated_at': updated_at,
     };
   }
-}
 
+  static String _readString(dynamic value) => value?.toString() ?? '';
+
+  static Timestamp _readTimestamp(dynamic value) {
+    if (value is Timestamp) return value;
+    if (value is DateTime) return Timestamp.fromDate(value);
+
+    final parsedDate = DateTime.tryParse(value?.toString() ?? '');
+    if (parsedDate != null) return Timestamp.fromDate(parsedDate);
+
+    return Timestamp.fromMillisecondsSinceEpoch(0);
+  }
+}

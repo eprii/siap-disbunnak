@@ -1,11 +1,7 @@
-import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
-import '../../widgets/navigation/bottom_navigation_bar.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -18,9 +14,49 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+  static const String _backgroundAsset =
+      'assets/images/background/background_image.png';
+  static const String _siapLogoAsset =
+      'assets/images/logo/LOGO_SIAP.png';
+  static const String _kalselLogoAsset =
+      'assets/images/logo/LOGO_KALSEL.png';
 
-  static const Duration _animationDuration = Duration(milliseconds: 9000);
+  static const double _siapLogoAspectRatio = 596 / 264;
+  static const double _brandInitialAlignmentY = -0.08;
+  static const double _brandFinalAlignmentY = -0.50;
+  static const double _logoSubtitleSpacing = 12;
+  static const double _kalselLogoSpacing = 14;
+
+  // Timeline splash:
+  // 0 ms    - 650 ms  : logo SIAP masuk
+  // 650 ms  - 3000 ms : logo SIAP tetap tampil sendiri
+  // 3000 ms - 3550 ms : subjudul muncul
+  // 3750 ms - 4650 ms : grup logo bergerak ke atas
+  // 4200 ms - 4850 ms : logo Kalsel muncul
+  // 4850 ms - 5550 ms : tampilan akhir ditahan sebelum navigasi
+  static const Duration _animationDuration = Duration(milliseconds: 5550);
+
+  static const int _logoEntranceStartMs = 0;
+  static const int _logoEntranceEndMs = 650;
+  static const int _subtitleEntranceStartMs = 3000;
+  static const int _subtitleEntranceEndMs = 3550;
+  static const int _brandMoveStartMs = 3750;
+  static const int _brandMoveEndMs = 4650;
+  static const int _kalselEntranceStartMs = 4200;
+  static const int _kalselEntranceEndMs = 4850;
+
+  late final AnimationController _controller;
+  late final Animation<double> _siapOpacity;
+  late final Animation<double> _siapScale;
+  late final Animation<double> _subtitleOpacity;
+  late final Animation<Offset> _subtitleOffset;
+  late final Animation<double> _brandMove;
+  late final Animation<double> _kalselOpacity;
+  late final Animation<double> _kalselScale;
+
+  static double _timelinePoint(int milliseconds) {
+    return milliseconds / _animationDuration.inMilliseconds;
+  }
 
   @override
   void initState() {
@@ -31,53 +67,102 @@ class _SplashScreenState extends State<SplashScreen>
       duration: _animationDuration,
     );
 
-    _controller
-      ..forward()
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed && mounted) {
-          _goToNextPage();
-        }
-      });
-  }
+    _siapOpacity = CurvedAnimation(
+      parent: _controller,
+      curve: Interval(
+        _timelinePoint(_logoEntranceStartMs),
+        _timelinePoint(_logoEntranceEndMs),
+        curve: Curves.easeOut,
+      ),
+    );
 
-void _goToNextPage() {
-  final User? currentUser = FirebaseAuth.instance.currentUser;
-
-  if (currentUser != null) {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => const SikapBottomNavigationBar(
-          isAdmin: false,
+    _siapScale = Tween<double>(
+      begin: 0.86,
+      end: 1,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Interval(
+          _timelinePoint(_logoEntranceStartMs),
+          _timelinePoint(_logoEntranceEndMs),
+          curve: Curves.easeOutBack,
         ),
       ),
     );
-    return;
+
+    _subtitleOpacity = CurvedAnimation(
+      parent: _controller,
+      curve: Interval(
+        _timelinePoint(_subtitleEntranceStartMs),
+        _timelinePoint(_subtitleEntranceEndMs),
+        curve: Curves.easeOut,
+      ),
+    );
+
+    _subtitleOffset = Tween<Offset>(
+      begin: const Offset(0, 0.35),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Interval(
+          _timelinePoint(_subtitleEntranceStartMs),
+          _timelinePoint(_subtitleEntranceEndMs),
+          curve: Curves.easeOutCubic,
+        ),
+      ),
+    );
+
+    _brandMove = CurvedAnimation(
+      parent: _controller,
+      curve: Interval(
+        _timelinePoint(_brandMoveStartMs),
+        _timelinePoint(_brandMoveEndMs),
+        curve: Curves.easeInOutCubic,
+      ),
+    );
+
+    _kalselOpacity = CurvedAnimation(
+      parent: _controller,
+      curve: Interval(
+        _timelinePoint(_kalselEntranceStartMs),
+        _timelinePoint(_kalselEntranceEndMs),
+        curve: Curves.easeOut,
+      ),
+    );
+
+    _kalselScale = Tween<double>(
+      begin: 0.72,
+      end: 1,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Interval(
+          _timelinePoint(_kalselEntranceStartMs),
+          _timelinePoint(_kalselEntranceEndMs),
+          curve: Curves.easeOutBack,
+        ),
+      ),
+    );
+
+    _controller.addStatusListener(_handleAnimationStatus);
+    _controller.forward();
   }
 
-  Navigator.of(context).pushReplacement(
-    PageRouteBuilder(
-      transitionDuration: const Duration(milliseconds: 900),
-      reverseTransitionDuration: const Duration(milliseconds: 900),
-      pageBuilder: (context, animation, secondaryAnimation) {
-        return const SikapBottomNavigationBar(
-          isAdmin: false,
-        );
-      },
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        return child;
-      },
-    ),
-  );
-}
+  void _handleAnimationStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || !mounted) {
+      return;
+    }
+
+    Navigator.of(context).pushReplacementNamed('/');
+  }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller
+      ..removeStatusListener(_handleAnimationStatus)
+      ..dispose();
     super.dispose();
-  }
-
-  double _interval(double start, double end) {
-    return _normalizeInterval(_controller.value, start, end);
   }
 
   @override
@@ -86,350 +171,155 @@ void _goToNextPage() {
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.dark,
-        systemNavigationBarColor: Color(0xFFE9E5D6),
+        statusBarBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.transparent,
         systemNavigationBarIconBrightness: Brightness.dark,
+        systemNavigationBarDividerColor: Colors.transparent,
       ),
       child: Scaffold(
-        body: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            final double value = _controller.value;
-
-            final double holeOpacity =
-                _interval(0.42, 0.50) * (1 - _interval(0.68, 0.76));
-
-            final double welcomeOpacity =
-                _interval(0.48, 0.58) * (1 - _interval(0.66, 0.76));
-
-            final double welcomeRise = 26 * (1 - Curves.easeOutCubic.transform(
-                  _interval(0.48, 0.58),
-                ));
-
-            final double floatingOffset =
-                math.sin(value * math.pi * 8) * 3.5 * welcomeOpacity;
-
-            final double logoOpacity = _interval(0.83, 0.96);
-
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                CustomPaint(
-                  painter: _SplashBackgroundPainter(progress: value),
-                ),
-
-                Align(
-                  alignment: const Alignment(0, 0.08),
-                  child: Opacity(
-                    opacity: holeOpacity,
-                    child: const _BlackHole(),
-                  ),
-                ),
-
-                Align(
-                  alignment: const Alignment(0, -0.03),
-                  child: Opacity(
-                    opacity: welcomeOpacity,
-                    child: Transform.translate(
-                      offset: Offset(
-                        0,
-                        welcomeRise + floatingOffset,
-                      ),
-                      child: const Text(
-                        'Welcome',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w400,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-                Center(
-                  child: Opacity(
-                    opacity: logoOpacity,
-                    child: Hero(
-                      tag: 'dinas_identity',
-                      createRectTween: (begin, end) {
-                        return MaterialRectArcTween(
-                          begin: begin,
-                          end: end,
-                        );
-                      },
-                      child: const _DinasIdentity(),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _SplashBackgroundPainter extends CustomPainter {
-  final double progress;
-
-  const _SplashBackgroundPainter({
-    required this.progress,
-  });
-
-  static const Color _cream = Color(0xFFE9E5D6);
-  static const Color _green = Color(0xFF464E2E);
-  static const Color _white = Color(0xFFFAFAFA);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Paint paint = Paint()..isAntiAlias = true;
-
-    if (progress < 0.72) {
-      _paintOpeningBackground(canvas, size, paint);
-      return;
-    }
-
-    _paintClosingBackground(canvas, size, paint);
-  }
-
-  void _paintOpeningBackground(Canvas canvas, Size size, Paint paint) {
-  final double width = size.width;
-  final double height = size.height;
-
-  paint.color = _cream;
-  canvas.drawRect(
-    Offset.zero & size,
-    paint,
-  );
-
-  final Path greenPath = Path();
-
-  if (progress < 0.18) {
-    greenPath
-      ..moveTo(width * 0.50, 0)
-      ..lineTo(width, 0)
-      ..lineTo(width, height)
-      ..lineTo(width * 0.50, height)
-      ..close();
-
-    paint.color = _green;
-    canvas.drawPath(greenPath, paint);
-    return;
-  }
-
-  if (progress < 0.38) {
-    final double phase = Curves.easeInOutCubic.transform(
-      _normalizeInterval(progress, 0.18, 0.38),
-    );
-
-    final double topX = _lerp(width * 0.50, width, phase);
-    final double bottomX = _lerp(width * 0.50, 0, phase);
-
-    greenPath
-      ..moveTo(topX, 0)
-      ..lineTo(width, 0)
-      ..lineTo(width, height)
-      ..lineTo(bottomX, height)
-      ..close();
-
-    paint.color = _green;
-    canvas.drawPath(greenPath, paint);
-    return;
-  }
-
-  if (progress < 0.50) {
-    greenPath
-      ..moveTo(width, 0)
-      ..lineTo(width, 0)
-      ..lineTo(width, height)
-      ..lineTo(0, height)
-      ..close();
-
-    paint.color = _green;
-    canvas.drawPath(greenPath, paint);
-
-    final double fadePhase = Curves.easeInOut.transform(
-      _normalizeInterval(progress, 0.38, 0.50),
-    );
-
-    paint.color = _green.withValues(alpha: fadePhase);
-    canvas.drawRect(
-      Offset.zero & size,
-      paint,
-    );
-    return;
-  }
-
-  paint.color = _green;
-  canvas.drawRect(
-    Offset.zero & size,
-    paint,
-  );
-}
-
-  void _paintClosingBackground(Canvas canvas, Size size, Paint paint) {
-    final double width = size.width;
-    final double height = size.height;
-
-    paint.color = _white;
-    canvas.drawRect(
-      Offset.zero & size,
-      paint,
-    );
-
-    final double phase = Curves.easeInOutCubic.transform(
-      _normalizeInterval(progress, 0.72, 0.90),
-    );
-
-    final double waveTop = _lerp(-height * 0.10, height * 0.78, phase);
-    final double waveDepth = height * 0.115;
-
-    final Path bottomGreenPath = Path()
-      ..moveTo(0, waveTop)
-      ..cubicTo(
-        width * 0.18,
-        waveTop + 4,
-        width * 0.28,
-        waveTop + waveDepth,
-        width * 0.43,
-        waveTop + waveDepth,
-      )
-      ..cubicTo(
-        width * 0.56,
-        waveTop + waveDepth,
-        width * 0.68,
-        waveTop + 8,
-        width,
-        waveTop,
-      )
-      ..lineTo(width, height)
-      ..lineTo(0, height)
-      ..close();
-
-    paint.color = _green;
-    canvas.drawPath(bottomGreenPath, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _SplashBackgroundPainter oldDelegate) {
-    return oldDelegate.progress != progress;
-  }
-}
-
-class _BlackHole extends StatelessWidget {
-  const _BlackHole();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      width: 230,
-      height: 22,
-      child: CustomPaint(
-        painter: _BlackHolePainter(),
-      ),
-    );
-  }
-}
-
-class _BlackHolePainter extends CustomPainter {
-  const _BlackHolePainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Offset center = Offset(size.width / 2, size.height / 2);
-
-    final List<_OvalLayer> layers = [
-      _OvalLayer(width: 1.00, height: 1.00, opacity: 0.06),
-      _OvalLayer(width: 0.94, height: 0.86, opacity: 0.10),
-      _OvalLayer(width: 0.86, height: 0.72, opacity: 0.18),
-      _OvalLayer(width: 0.76, height: 0.56, opacity: 0.34),
-      _OvalLayer(width: 0.66, height: 0.42, opacity: 0.58),
-      _OvalLayer(width: 0.56, height: 0.30, opacity: 0.88),
-    ];
-
-    for (final _OvalLayer layer in layers) {
-      final Rect rect = Rect.fromCenter(
-        center: center,
-        width: size.width * layer.width,
-        height: size.height * layer.height,
-      );
-
-      final Paint paint = Paint()
-        ..isAntiAlias = true
-        ..color = Color.fromRGBO(17, 23, 10, layer.opacity);
-
-      canvas.drawOval(rect, paint);
-    }
-
-    final Rect coreRect = Rect.fromCenter(
-      center: center,
-      width: size.width * 0.50,
-      height: size.height * 0.24,
-    );
-
-    final Paint corePaint = Paint()
-      ..isAntiAlias = true
-      ..color = const Color(0xFF11170A);
-
-    canvas.drawOval(coreRect, corePaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _BlackHolePainter oldDelegate) {
-    return false;
-  }
-}
-
-class _OvalLayer {
-  final double width;
-  final double height;
-  final double opacity;
-
-  const _OvalLayer({
-    required this.width,
-    required this.height,
-    required this.opacity,
-  });
-}
-
-class _DinasIdentity extends StatelessWidget {
-  const _DinasIdentity();
-
-  static const String _logoPath = 'assets/images/logo/LOGO_KALSEL.png';
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(
-          maxWidth: 300,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset(
-              _logoPath,
-              width: 120,
-              height: 120,
-              fit: BoxFit.contain,
+        backgroundColor: const Color(0xFFFFF8DB),
+        body: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            Positioned.fill(
+              child: Image.asset(
+                _backgroundAsset,
+                fit: BoxFit.cover,
+                alignment: Alignment.center,
+                filterQuality: FilterQuality.high,
+              ),
             ),
-            const SizedBox(height: 14),
-            const Text(
-              'Dinas Perkebunan dan Peternakan\nProvinsi Kalimantan Selatan',
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textScaler: TextScaler.noScaling,
-              style: TextStyle(
-                color: Color(0xFF1F2417),
-                fontSize: 15,
-                fontWeight: FontWeight.w400,
-                height: 1.28,
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final double contentWidth =
+                      constraints.maxWidth.clamp(0, 430).toDouble();
+                  final double logoWidth =
+                      (contentWidth * 0.39).clamp(132, 168).toDouble();
+                  final double logoHeight =
+                      logoWidth / _siapLogoAspectRatio;
+                  final double brandHeight =
+                      (contentWidth * 0.62).clamp(206, 224).toDouble();
+
+                  const double kalselLogoWidth = 47;
+                  const double kalselLogoHeight = 57;
+
+                  final double siapLogoTop =
+                      (brandHeight - logoHeight) / 2;
+                  final double kalselLogoTop =
+                      (siapLogoTop -
+                              kalselLogoHeight -
+                              _kalselLogoSpacing)
+                          .clamp(0, brandHeight)
+                          .toDouble();
+                  final double subtitleTop = siapLogoTop +
+                      logoHeight +
+                      _logoSubtitleSpacing;
+
+                  return AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, child) {
+                      final double alignmentY = ui.lerpDouble(
+                            _brandInitialAlignmentY,
+                            _brandFinalAlignmentY,
+                            _brandMove.value,
+                          ) ??
+                          _brandFinalAlignmentY;
+
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: <Widget>[
+                          Align(
+                            alignment: Alignment(0, alignmentY),
+                            child: SizedBox(
+                              width: contentWidth,
+                              height: brandHeight,
+                              child: Stack(
+                                alignment: Alignment.topCenter,
+                                children: <Widget>[
+                                  Positioned(
+                                    top: kalselLogoTop,
+                                    child: FadeTransition(
+                                      opacity: _kalselOpacity,
+                                      child: ScaleTransition(
+                                        scale: _kalselScale,
+                                        child: Image.asset(
+                                          _kalselLogoAsset,
+                                          width: kalselLogoWidth,
+                                          height: kalselLogoHeight,
+                                          fit: BoxFit.contain,
+                                          filterQuality:
+                                              FilterQuality.high,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: siapLogoTop,
+                                    child: FadeTransition(
+                                      opacity: _siapOpacity,
+                                      child: ScaleTransition(
+                                        scale: _siapScale,
+                                        child: SizedBox(
+                                          width: logoWidth,
+                                          height: logoHeight,
+                                          child: Image.asset(
+                                            _siapLogoAsset,
+                                            fit: BoxFit.contain,
+                                            filterQuality:
+                                                FilterQuality.high,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: subtitleTop,
+                                    left: 20,
+                                    right: 20,
+                                    child: FadeTransition(
+                                      opacity: _subtitleOpacity,
+                                      child: SlideTransition(
+                                        position: _subtitleOffset,
+                                        child: const Text(
+                                          'Sistem Informasi Administrasi Pegawai',
+                                          textAlign: TextAlign.center,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.fade,
+                                          softWrap: false,
+                                          style: TextStyle(
+                                            color: Color(0xFF20291C),
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            letterSpacing: -0.1,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const Positioned(
+                            left: 24,
+                            right: 24,
+                            bottom: 18,
+                            child: Text(
+                              'Versi 1.0.0',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Color(0xFF38352E),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
               ),
             ),
           ],
@@ -438,15 +328,3 @@ class _DinasIdentity extends StatelessWidget {
     );
   }
 }
-
-double _normalizeInterval(double value, double start, double end) {
-  if (value <= start) return 0;
-  if (value >= end) return 1;
-
-  return (value - start) / (end - start);
-}
-
-double _lerp(double start, double end, double progress) {
-  return start + ((end - start) * progress);
-}
-
