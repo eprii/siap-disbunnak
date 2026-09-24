@@ -1,7 +1,7 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class EmployeeSkFileService {
@@ -14,32 +14,10 @@ class EmployeeSkFileService {
 
   SupabaseClient get _client => Supabase.instance.client;
 
-  Future<String> preparePreviewFile({
+  Future<Uint8List> preparePreviewData({
     required String storagePath,
-    required String fileName,
-  }) async {
-    final Uint8List bytes = await _downloadBytes(storagePath);
-    final String safeName = _safeFileName(fileName);
-
-    final Directory previewDirectory = Directory(
-      '${Directory.systemTemp.path}/siap_pdf_preview',
-    );
-
-    if (!await previewDirectory.exists()) {
-      await previewDirectory.create(recursive: true);
-    }
-
-    final File localFile = File(
-      '${previewDirectory.path}/'
-      '${DateTime.now().millisecondsSinceEpoch}_$safeName',
-    );
-
-    await localFile.writeAsBytes(
-      bytes,
-      flush: true,
-    );
-
-    return localFile.path;
+  }) {
+    return _downloadBytes(storagePath);
   }
 
   Future<String?> downloadFile({
@@ -113,31 +91,19 @@ class EmployeeSkFileService {
   Future<Uint8List> _downloadFromUrl(
     String url,
   ) async {
-    final HttpClient client = HttpClient();
-
     try {
-      final HttpClientRequest request =
-          await client.getUrl(Uri.parse(url));
-      final HttpClientResponse response =
-          await request.close();
+      final ByteData data = await NetworkAssetBundle(
+        Uri.parse(url),
+      ).load(url);
 
-      if (response.statusCode < 200 ||
-          response.statusCode >= 300) {
-        throw EmployeeSkFileException(
-          'Server menolak file dengan status '
-          '${response.statusCode}.',
-        );
-      }
-
-      final BytesBuilder builder = BytesBuilder(copy: false);
-
-      await for (final List<int> chunk in response) {
-        builder.add(chunk);
-      }
-
-      return builder.takeBytes();
-    } finally {
-      client.close(force: true);
+      return data.buffer.asUint8List(
+        data.offsetInBytes,
+        data.lengthInBytes,
+      );
+    } catch (error) {
+      throw EmployeeSkFileException(
+        'Gagal mengambil dokumen dari URL: $error',
+      );
     }
   }
 

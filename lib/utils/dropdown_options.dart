@@ -77,6 +77,22 @@ class DropdownOptions {
     'S-3',
   ];
 
+  /// Nama bulan kalender untuk periode atau tanggal berbasis bulan.
+  static const List<String> bulanKalender = <String>[
+    'Januari',
+    'Februari',
+    'Maret',
+    'April',
+    'Mei',
+    'Juni',
+    'Juli',
+    'Agustus',
+    'September',
+    'Oktober',
+    'November',
+    'Desember',
+  ];
+
   static const List<String> instansiKerja = <String>[
     '26300 - PEMERINTAH PROVINSI KALIMANTAN SELATAN',
     '26301 - PEMERINTAH KABUPATEN TANAH LAUT',

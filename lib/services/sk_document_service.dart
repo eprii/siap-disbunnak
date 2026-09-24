@@ -1,8 +1,11 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'notification_service.dart';
+import 'profile_completion_service.dart';
 
 class SkDocumentService {
   SkDocumentService._();
@@ -11,7 +14,7 @@ class SkDocumentService {
       SkDocumentService._();
 
   static const String _bucket = 'sk';
-  static const int _maxFileBytes = 5 * 1024 * 1024;
+  static const int maxFileBytes = 3 * 1024 * 1024;
 
   final firebase_auth.FirebaseAuth _auth =
       firebase_auth.FirebaseAuth.instance;
@@ -24,7 +27,7 @@ class SkDocumentService {
   Future<String> createDocument({
     required String collection,
     required String storageFolder,
-    required File file,
+    required Uint8List fileBytes,
     required String originalFileName,
     required Map<String, dynamic> data,
   }) async {
@@ -37,23 +40,23 @@ class SkDocumentService {
       );
     }
 
-    if (!await file.exists()) {
-      throw const SkDocumentException(
-        'File PDF tidak ditemukan pada perangkat.',
+    try {
+      await ProfileCompletionService.instance.requireCompleteProfile(
+        actionLabel: 'mengunggah dokumen SK',
       );
+    } on ProfileCompletionException catch (error) {
+      throw SkDocumentException(error.message);
     }
 
-    final int fileSize = await file.length();
-
-    if (fileSize <= 0) {
+    if (fileBytes.isEmpty) {
       throw const SkDocumentException(
         'File PDF kosong atau tidak dapat dibaca.',
       );
     }
 
-    if (fileSize > _maxFileBytes) {
+    if (fileBytes.length > maxFileBytes) {
       throw const SkDocumentException(
-        'Ukuran PDF maksimal 5 MB.',
+        'Ukuran PDF maksimal 3 MB.',
       );
     }
 
@@ -85,9 +88,9 @@ class SkDocumentService {
         );
       }
 
-      await _supabase.storage.from(_bucket).upload(
+      await _supabase.storage.from(_bucket).uploadBinary(
             storagePath,
-            file,
+            fileBytes,
             fileOptions: const FileOptions(
               upsert: false,
               contentType: 'application/pdf',
@@ -96,7 +99,10 @@ class SkDocumentService {
           );
       uploaded = true;
 
-      await _db.collection(cleanCollection).add(
+      final DocumentReference<Map<String, dynamic>> documentRef =
+          _db.collection(cleanCollection).doc();
+
+      await documentRef.set(
         <String, dynamic>{
           ...data,
           'owner_id': uid,
@@ -108,6 +114,16 @@ class SkDocumentService {
           'updated_at': FieldValue.serverTimestamp(),
         },
       );
+
+      try {
+        await NotificationService.instance.notifySkSubmitted(
+          ownerId: uid,
+          collection: cleanCollection,
+          documentId: documentRef.id,
+        );
+      } catch (_) {
+        // Notifikasi bersifat best effort dan tidak membatalkan upload SK.
+      }
 
       return storagePath;
     } on StorageException catch (error) {

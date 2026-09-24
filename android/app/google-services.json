@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "1008333556563",
-    "project_id": "sikap-disbunnak",
-    "storage_bucket": "sikap-disbunnak.firebasestorage.app"
+    "project_number": "201811245486",
+    "project_id": "siap-disbunnak",
+    "storage_bucket": "siap-disbunnak.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1008333556563:android:4487009fcacb617daaafa6",
+        "mobilesdk_app_id": "1:201811245486:android:f2297a3a8264166842f03f",
         "android_client_info": {
           "package_name": "id.kalselprov.disbunnak.siap"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAakE1DhwRUXCp1StO5y31uzi9NqC7hkYw"
+          "current_key": "AIzaSyDgj4v0rxMrloU8Ar8kdylAf0OJTfkslCg"
         }
       ],
       "services": {

@@ -3,8 +3,8 @@
     "platforms": {
       "android": {
         "default": {
-          "projectId": "sikap-disbunnak",
-          "appId": "1:1008333556563:android:4487009fcacb617daaafa6",
+          "projectId": "siap-disbunnak",
+          "appId": "1:201811245486:android:f2297a3a8264166842f03f",
           "fileOutput": "android/app/google-services.json"
         }
       },
@@ -16,8 +16,32 @@
             "ios": "1:1008333556563:ios:80ee9c89d11ead87aaafa6",
             "web": "1:1008333556563:web:8258507a841aea80aaafa6"
           }
+        },
+        "lib/config/firebase_options.dart": {
+          "projectId": "siap-disbunnak",
+          "configurations": {
+            "android": "1:201811245486:android:f2297a3a8264166842f03f",
+            "ios": "1:201811245486:ios:a0836c29dbf271bc42f03f",
+            "web": "1:201811245486:web:72b7bc9608de8b0242f03f"
+          }
         }
       }
     }
+  },
+
+  "hosting": {
+    "site": "siap-disbunnak",
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
   }
 }

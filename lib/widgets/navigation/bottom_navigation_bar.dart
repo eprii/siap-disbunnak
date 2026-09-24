@@ -1,15 +1,16 @@
 // SIAP_NAV_WHITE_PLAIN_V4
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:iconify_flutter/iconify_flutter.dart';
 import 'package:iconify_flutter/icons/material_symbols.dart';
 
+import '../../config/app_theme.dart';
 import '../../pages/home/home_page.dart';
 import '../../pages/kelola_data/kelola_data_page.dart';
+import '../../pages/profile/admin_profile_page.dart';
 import '../../pages/profile/profile_page.dart';
 import '../../pages/saved_sk/admin/saved_sk_page.dart';
+import '../../services/profile_completion_service.dart';
 
 const String _iconamoonProfileFill = '''
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
@@ -20,11 +21,41 @@ const String _iconamoonProfileFill = '''
 const double _siapBarHeight = 80;
 const double _siapBarBottomMargin = 12;
 const double _siapBottomGlassExtraHeight = 1;
+const String _siapBottomNavigationHeroTag = 'siap-bottom-navigation';
+
+Widget _buildBottomNavigationFlight(
+  BuildContext flightContext,
+  Animation<double> animation,
+  HeroFlightDirection flightDirection,
+  BuildContext fromHeroContext,
+  BuildContext toHeroContext,
+) {
+  final Hero destinationHero = toHeroContext.widget as Hero;
+
+  return Material(
+    type: MaterialType.transparency,
+    child: destinationHero.child,
+  );
+}
 
 class SiapNavigationController {
   SiapNavigationController._();
 
   static final ValueNotifier<int> selectedIndex = ValueNotifier<int>(0);
+  static String? _activeSessionUid;
+
+  static int prepareSession(String uid) {
+    final String cleanUid = uid.trim();
+    if (cleanUid.isNotEmpty && _activeSessionUid != cleanUid) {
+      _activeSessionUid = cleanUid;
+      selectedIndex.value = 0;
+    }
+    return selectedIndex.value;
+  }
+
+  static void clearSession() {
+    _activeSessionUid = null;
+  }
 
   static void selectTab(int index) {
     if (index < 0 || index > 2) return;
@@ -35,10 +66,12 @@ class SiapNavigationController {
 
 class SiapBottomNavigationBar extends StatefulWidget {
   final bool isAdmin;
+  final String sessionUid;
 
   const SiapBottomNavigationBar({
     super.key,
     this.isAdmin = false,
+    required this.sessionUid,
   });
 
   @override
@@ -54,20 +87,24 @@ class _SiapBottomNavigationBarState
   late final List<Widget> _pages;
   late final List<_SiapNavItem> _navItems;
 
-  int _selectedIndex = SiapNavigationController.selectedIndex.value;
+  late int _selectedIndex;
+  bool _profileCompletionPromptShown = false;
 
   @override
   void initState() {
     super.initState();
+    _selectedIndex = SiapNavigationController.prepareSession(
+      widget.sessionUid,
+    );
     SiapNavigationController.selectedIndex.addListener(
       _syncSelectedIndex,
     );
 
     if (widget.isAdmin) {
       _pages = const <Widget>[
-        HomePage(),
+        HomePage(isAdmin: true),
         SavedSKPage(),
-        ProfilePage(),
+        AdminProfilePage(),
       ];
 
       _navItems = const <_SiapNavItem>[
@@ -91,7 +128,7 @@ class _SiapBottomNavigationBarState
     }
 
     _pages = const <Widget>[
-      HomePage(),
+      HomePage(isAdmin: false),
       KelolaDataPage(),
       ProfilePage(),
     ];
@@ -113,6 +150,79 @@ class _SiapBottomNavigationBarState
         iconSize: 29,
       ),
     ];
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showProfileCompletionPromptIfNeeded();
+    });
+  }
+
+  Future<void> _showProfileCompletionPromptIfNeeded() async {
+    if (_profileCompletionPromptShown || !mounted || widget.isAdmin) {
+      return;
+    }
+
+    _profileCompletionPromptShown = true;
+
+    try {
+      final ProfileCompletionStatus status =
+          await ProfileCompletionService.instance.checkCurrentUser();
+      if (!mounted || status.isComplete || status.isAdmin) return;
+
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFFFFFCF5),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            icon: const Icon(
+              Icons.assignment_ind_outlined,
+              size: 44,
+              color: Color(0xFF9D6A18),
+            ),
+            title: const Text(
+              'Lengkapi Profil Terlebih Dahulu',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            content: SingleChildScrollView(
+              child: Text(
+                'Profil belum lengkap. Lengkapi ${status.missingFieldsText}. '
+                'Sebelum lengkap, akun tidak dapat mengunggah dokumen SK '
+                'atau mengirim komentar dan balasan.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.45,
+                ),
+              ),
+            ),
+            actionsAlignment: MainAxisAlignment.center,
+            actions: <Widget>[
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  SiapNavigationController.selectTab(2);
+                },
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: const Text('LENGKAPI PROFIL'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF9D6A18),
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (_) {
+      // Pemeriksaan akan tetap dilakukan lagi saat aksi terbatas dipakai.
+    }
   }
 
   @override
@@ -192,10 +302,15 @@ class _SiapBottomNavigationBarState
               right: 20,
               bottom: systemBottom + _siapBarBottomMargin,
               height: _siapBarHeight,
-              child: _SiapFloatingBottomNavBar(
-                selectedIndex: _selectedIndex,
-                items: _navItems,
-                onItemSelected: _onItemSelected,
+              child: Hero(
+                tag: _siapBottomNavigationHeroTag,
+                transitionOnUserGestures: true,
+                flightShuttleBuilder: _buildBottomNavigationFlight,
+                child: _SiapFloatingBottomNavBar(
+                  selectedIndex: _selectedIndex,
+                  items: _navItems,
+                  onItemSelected: _onItemSelected,
+                ),
               ),
             ),
           ],
@@ -288,12 +403,17 @@ class SiapPageBottomNavigationBar extends StatelessWidget {
             right: 20,
             bottom: systemBottom + _siapBarBottomMargin,
             height: _siapBarHeight,
-            child: _SiapFloatingBottomNavBar(
-              selectedIndex: selectedIndex,
-              items: _items,
-              onItemSelected: (int index) {
-                _onItemSelected(context, index);
-              },
+            child: Hero(
+              tag: _siapBottomNavigationHeroTag,
+              transitionOnUserGestures: true,
+              flightShuttleBuilder: _buildBottomNavigationFlight,
+              child: _SiapFloatingBottomNavBar(
+                selectedIndex: selectedIndex,
+                items: _items,
+                onItemSelected: (int index) {
+                  _onItemSelected(context, index);
+                },
+              ),
             ),
           ),
         ],
@@ -314,32 +434,9 @@ class _BottomGlassGradient extends StatelessWidget {
         topLeft: Radius.circular(_topRadius),
         topRight: Radius.circular(_topRadius),
       ),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: 1.5,
-          sigmaY: 1.5,
-        ),
-        child: const DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: <Color>[
-                Colors.transparent,
-                Color(0x24B9A36E),
-                Color(0x58D4C294),
-                Color(0xA8ECE0C2),
-                Color(0xF2FFF9EA),
-              ],
-              stops: <double>[
-                0.0,
-                0.24,
-                0.50,
-                0.76,
-                1.0,
-              ],
-            ),
-          ),
+      child: const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: AppTheme.bottomNavigationFadeGradient,
         ),
       ),
     );

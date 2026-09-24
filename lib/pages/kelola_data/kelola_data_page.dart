@@ -1,9 +1,13 @@
 // SIAP_KELOLA_DATA_VISIBLE_CARD_SHADOWS_V6
 import 'package:flutter/material.dart';
 
+import '../../services/profile_completion_service.dart';
+import '../../widgets/navigation/bottom_navigation_bar.dart';
+
 import 'form_sk/form_sk_angka_kredit_page.dart';
 import 'form_sk/form_sk_cpns_page.dart';
 import 'form_sk/form_sk_cuti_page.dart';
+import 'form_sk/form_sk_diklat_page.dart';
 import 'form_sk/form_sk_jabatan_page.dart';
 import 'form_sk/form_sk_kgb_page.dart';
 import 'form_sk/form_sk_pangkat_page.dart';
@@ -61,6 +65,14 @@ class KelolaDataPage extends StatelessWidget {
       icon: Icons.school_rounded,
       warna: Color(0xFF3C8E14),
       warnaIkon: Color(0xFFEAF6DC),
+    ),
+    _KategoriData(
+      jenis: _JenisData.diklat,
+      judul: 'Diklat',
+      deskripsi: 'Pelatihan &\npengembangan',
+      icon: Icons.military_tech_outlined,
+      warna: Color(0xFF8A5D00),
+      warnaIkon: Color(0xFFFFF0D4),
     ),
     _KategoriData(
       jenis: _JenisData.penghargaan,
@@ -318,7 +330,9 @@ class KelolaDataPage extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () => _openForm(context, kategori.jenis),
+          onTap: () {
+            _openForm(context, kategori.jenis);
+          },
           child: Ink(
             decoration: BoxDecoration(
               color: _cardColor,
@@ -443,7 +457,70 @@ class KelolaDataPage extends StatelessWidget {
     );
   }
 
-  void _openForm(BuildContext context, _JenisData jenis) {
+  Future<void> _openForm(
+    BuildContext context,
+    _JenisData jenis,
+  ) async {
+    try {
+      final ProfileCompletionStatus status =
+          await ProfileCompletionService.instance.checkCurrentUser();
+
+      if (!status.isComplete && !status.isAdmin) {
+        if (!context.mounted) return;
+
+        await showDialog<void>(
+          context: context,
+          builder: (BuildContext dialogContext) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFFFFFCF5),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+              title: const Text(
+                'Profil Belum Lengkap',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              content: Text(
+                'Lengkapi ${status.missingFieldsText} sebelum mengunggah dokumen SK.',
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.45,
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('NANTI'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    SiapNavigationController.selectTab(2);
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF9D6A18),
+                  ),
+                  child: const Text('LENGKAPI PROFIL'),
+                ),
+              ],
+            );
+          },
+        );
+        return;
+      }
+    } on ProfileCompletionException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      return;
+    }
+
     late final Widget destinationPage;
 
     switch (jenis) {
@@ -461,6 +538,9 @@ class KelolaDataPage extends StatelessWidget {
         break;
       case _JenisData.pendidikan:
         destinationPage = const FormSkPendidikanPage();
+        break;
+      case _JenisData.diklat:
+        destinationPage = const FormSkDiklatPage();
         break;
       case _JenisData.penghargaan:
         destinationPage = const FormSkPenghargaanPage();
@@ -510,6 +590,7 @@ enum _JenisData {
   pangkat,
   jabatan,
   pendidikan,
+  diklat,
   penghargaan,
   kgb,
   cuti,

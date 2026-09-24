@@ -2,15 +2,27 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../models/users_model.dart';
+import '../../services/firestore_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/pegawai_directory_service.dart';
+import '../../services/saved_user_service.dart';
 import '../../utils/common_first_names.dart';
+import '../../widgets/feedback/siap_top_notification.dart';
 import '../../widgets/profile/pegawai_avatar.dart';
+import '../notifications/notification_page.dart';
 import '../pegawai/detail_pegawai_page.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final bool isAdmin;
+
+  const HomePage({
+    super.key,
+    this.isAdmin = false,
+  });
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -26,7 +38,11 @@ class _HomePageState extends State<HomePage>
   static const Color _textColor = Color(0xFF1E1E1E);
   static const Color _mutedTextColor = Color(0xFF6F6F6F);
 
-  static const double _expandedTopHeight = 176;
+  // Tinggi konten header tanpa status bar. Android menambahkan safe-area
+  // aktual, sedangkan Web biasanya bernilai 0 sehingga tidak menyisakan
+  // ruang kosong sebesar status bar di antara sapaan dan kolom pencarian.
+  static const double _expandedTopContentHeight = 152;
+  static const double _webTopInset = 12;
   static const double _controlsBodyHeight = 112;
   static const double _bottomFadeHeight = 14;
 
@@ -45,18 +61,35 @@ class _HomePageState extends State<HomePage>
   final ScrollController _scrollController = ScrollController();
 
   late final Stream<List<PegawaiDirectoryItem>> _employeesStream;
+  late final Stream<UsersModel?> _currentAccountStream;
+  late final Stream<int> _unreadCountStream;
+  late final Stream<Set<String>> _savedUserIdsStream;
   late String _currentGreeting;
 
   Timer? _greetingTimer;
   String _selectedFilter = 'ALL';
+  final Set<String> _busySavedUsers = <String>{};
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _currentGreeting = _resolveGreeting(DateTime.now());
-    _employeesStream =
-        PegawaiDirectoryService.instance.watchEmployees();
+
+    final String currentUid =
+        FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
+
+    _currentAccountStream = currentUid.isEmpty
+        ? Stream<UsersModel?>.value(null)
+        : FirestoreService.instance.watchUser(currentUid);
+
+    _employeesStream = PegawaiDirectoryService.instance
+        .watchEmployees(includeInactive: widget.isAdmin);
+    _unreadCountStream =
+        NotificationService.instance.watchUnreadCount();
+    _savedUserIdsStream = widget.isAdmin
+        ? SavedUserService.instance.watchSavedOwnerIds()
+        : Stream<Set<String>>.value(<String>{});
     _scheduleGreetingUpdate();
   }
 
@@ -112,15 +145,30 @@ class _HomePageState extends State<HomePage>
     }).toList();
   }
 
+  double _effectiveTopInset(BuildContext context) {
+    final double systemTopInset =
+        MediaQuery.viewPaddingOf(context).top;
+
+    // Browser tidak memiliki status bar Flutter seperti Android.
+    // Tambahkan ruang kecil khusus Web agar header tidak menempel ke
+    // batas atas viewport. Android tetap memakai safe-area aslinya saja.
+    return systemTopInset + (kIsWeb ? _webTopInset : 0);
+  }
+
+  double _expandedTopHeight(BuildContext context) {
+    return _expandedTopContentHeight +
+        _effectiveTopInset(context);
+  }
+
   double _collapsedHeaderExtent(BuildContext context) {
-    return MediaQuery.viewPaddingOf(context).top +
+    return _effectiveTopInset(context) +
         _controlsBodyHeight +
         _bottomFadeHeight;
   }
 
   double _headerCollapseDistance(BuildContext context) {
-    return _expandedTopHeight -
-        MediaQuery.viewPaddingOf(context).top;
+    return _expandedTopHeight(context) -
+        _effectiveTopInset(context);
   }
 
   void _moveResultsToTop() {
@@ -195,154 +243,216 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  Future<void> _toggleSavedUser(
+    PegawaiDirectoryItem employee,
+    bool isSaved,
+  ) async {
+    final String ownerId = employee.uid.trim();
+    if (!widget.isAdmin ||
+        ownerId.isEmpty ||
+        _busySavedUsers.contains(ownerId)) {
+      return;
+    }
+
+    setState(() => _busySavedUsers.add(ownerId));
+
+    try {
+      if (isSaved) {
+        await SavedUserService.instance.removeUser(ownerId);
+      } else {
+        await SavedUserService.instance.saveUser(ownerId);
+      }
+
+      if (!mounted) return;
+      await showSiapTopNotification(
+        context: context,
+        title: isSaved ? 'User Dihapus dari Tersimpan' : 'User Disimpan',
+        message: isSaved
+            ? '${employee.namaLengkap} tidak lagi disimpan sebagai user.'
+            : '${employee.namaLengkap} ditambahkan ke Data Tersimpan.',
+        type: SiapNotificationType.success,
+      );
+    } on SavedUserException catch (error) {
+      if (!mounted) return;
+      await showSiapTopNotification(
+        context: context,
+        title: 'Data Tersimpan Gagal Diperbarui',
+        message: error.message,
+        type: SiapNotificationType.error,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      await showSiapTopNotification(
+        context: context,
+        title: 'Data Tersimpan Gagal Diperbarui',
+        message: 'Gagal memperbarui bookmark user: $error',
+        type: SiapNotificationType.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _busySavedUsers.remove(ownerId));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final double statusBarHeight =
-        MediaQuery.viewPaddingOf(context).top;
+        _effectiveTopInset(context);
+    final double expandedTopHeight =
+        _expandedTopHeight(context);
     final double listBottomPadding =
         80 +
         12 +
         MediaQuery.viewPaddingOf(context).bottom +
         28;
 
-    return StreamBuilder<List<PegawaiDirectoryItem>>(
-      stream: _employeesStream,
+    return StreamBuilder<UsersModel?>(
+      stream: _currentAccountStream,
       builder: (
         BuildContext context,
-        AsyncSnapshot<List<PegawaiDirectoryItem>> snapshot,
+        AsyncSnapshot<UsersModel?> accountSnapshot,
       ) {
-        final List<PegawaiDirectoryItem> allEmployees =
-            snapshot.data ?? <PegawaiDirectoryItem>[];
-        final List<PegawaiDirectoryItem> filteredEmployees =
-            _filterEmployees(allEmployees);
-        final PegawaiDirectoryItem? currentEmployee =
-            _findCurrentEmployee(allEmployees);
+        return StreamBuilder<List<PegawaiDirectoryItem>>(
+          stream: _employeesStream,
+          builder: (
+            BuildContext context,
+            AsyncSnapshot<List<PegawaiDirectoryItem>> snapshot,
+          ) {
+            final List<PegawaiDirectoryItem> allEmployees =
+                snapshot.data ?? <PegawaiDirectoryItem>[];
+            final List<PegawaiDirectoryItem> filteredEmployees =
+                _filterEmployees(allEmployees);
 
-        return ScrollConfiguration(
-          behavior: const MaterialScrollBehavior().copyWith(
-            dragDevices: const <PointerDeviceKind>{
-              PointerDeviceKind.touch,
-              PointerDeviceKind.mouse,
-              PointerDeviceKind.trackpad,
-              PointerDeviceKind.stylus,
-            },
-          ),
-          child: CustomScrollView(
-            controller: _scrollController,
-            physics: const ClampingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            slivers: <Widget>[
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _HomePinnedHeaderDelegate(
-                  minHeaderExtent:
-                      _collapsedHeaderExtent(context),
-                  maxHeaderExtent: _expandedTopHeight +
-                      _controlsBodyHeight +
-                      _bottomFadeHeight,
-                  statusBarHeight: statusBarHeight,
-                  expandedContent: _buildExpandedHeader(
-                    currentEmployee,
+            return StreamBuilder<Set<String>>(
+              stream: _savedUserIdsStream,
+              builder: (
+                BuildContext context,
+                AsyncSnapshot<Set<String>> savedUserSnapshot,
+              ) {
+                final Set<String> savedUserIds =
+                    savedUserSnapshot.data ?? <String>{};
+
+                return ScrollConfiguration(
+                  behavior: const MaterialScrollBehavior().copyWith(
+                    dragDevices: const <PointerDeviceKind>{
+                      PointerDeviceKind.touch,
+                      PointerDeviceKind.mouse,
+                      PointerDeviceKind.trackpad,
+                      PointerDeviceKind.stylus,
+                    },
                   ),
-                  searchField: _buildSearchField(),
-                  filterList: _buildFilterList(),
-                ),
-              ),
-              if (snapshot.connectionState ==
-                      ConnectionState.waiting &&
-                  !snapshot.hasData)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      bottom: listBottomPadding,
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    physics: const ClampingScrollPhysics(
+                      parent: AlwaysScrollableScrollPhysics(),
                     ),
-                    child: const Center(
-                      child: CircularProgressIndicator(
-                        color: _accentColor,
+                    slivers: <Widget>[
+                      SliverPersistentHeader(
+                        pinned: true,
+                        delegate: _HomePinnedHeaderDelegate(
+                          minHeaderExtent:
+                              _collapsedHeaderExtent(context),
+                          maxHeaderExtent: expandedTopHeight +
+                              _controlsBodyHeight +
+                              _bottomFadeHeight,
+                          statusBarHeight: statusBarHeight,
+                          expandedTopHeight: expandedTopHeight,
+                          expandedContent: _buildExpandedHeader(
+                            accountSnapshot.data,
+                          ),
+                          searchField: _buildSearchField(),
+                          filterList: _buildFilterList(),
+                        ),
                       ),
-                    ),
-                  ),
-                )
-              else if (snapshot.hasError)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      28,
-                      30,
-                      28,
-                      listBottomPadding,
-                    ),
-                    child: _HomeErrorState(
-                      message:
-                          'Gagal memuat data pegawai.\n${snapshot.error}',
-                    ),
-                  ),
-                )
-              else if (filteredEmployees.isEmpty)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      bottom: listBottomPadding,
-                    ),
-                    child: const _EmptyState(),
-                  ),
-                )
-              else
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    22,
-                    6,
-                    22,
-                    listBottomPadding,
-                  ),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (BuildContext context, int index) {
-                        if (index.isOdd) {
-                          return const SizedBox(height: 18);
-                        }
+                      if (snapshot.connectionState ==
+                              ConnectionState.waiting &&
+                          !snapshot.hasData)
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              bottom: listBottomPadding,
+                            ),
+                            child: const Center(
+                              child: CircularProgressIndicator(
+                                color: _accentColor,
+                              ),
+                            ),
+                          ),
+                        )
+                      else if (snapshot.hasError)
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              28,
+                              30,
+                              28,
+                              listBottomPadding,
+                            ),
+                            child: _HomeErrorState(
+                              message:
+                                  'Gagal memuat data pegawai.\n${snapshot.error}',
+                            ),
+                          ),
+                        )
+                      else if (filteredEmployees.isEmpty)
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              bottom: listBottomPadding,
+                            ),
+                            child: const _EmptyState(),
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: EdgeInsets.fromLTRB(
+                            22,
+                            6,
+                            22,
+                            listBottomPadding,
+                          ),
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (BuildContext context, int index) {
+                                if (index.isOdd) {
+                                  return const SizedBox(height: 18);
+                                }
 
-                        final PegawaiDirectoryItem employee =
-                            filteredEmployees[index ~/ 2];
+                                final PegawaiDirectoryItem employee =
+                                    filteredEmployees[index ~/ 2];
 
-                        return _buildPegawaiCard(employee);
-                      },
-                      childCount:
-                          (filteredEmployees.length * 2) - 1,
-                    ),
+                                return _buildPegawaiCard(
+                                  employee,
+                                  isSavedUser:
+                                      savedUserIds.contains(employee.uid),
+                                );
+                              },
+                              childCount:
+                                  (filteredEmployees.length * 2) - 1,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                ),
-            ],
-          ),
+                );
+              },
+            );
+          },
         );
       },
     );
   }
 
-  PegawaiDirectoryItem? _findCurrentEmployee(
-    List<PegawaiDirectoryItem> employees,
-  ) {
-    final String? uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return null;
-
-    for (final PegawaiDirectoryItem employee in employees) {
-      if (employee.uid == uid) return employee;
-    }
-    return null;
-  }
-
-  Widget _buildExpandedHeader(
-    PegawaiDirectoryItem? currentEmployee,
-  ) {
-    final String displayName = currentEmployee == null
-        ? 'Pegawai'
-        : _resolveGreetingName(
-            currentEmployee.namaLengkap,
-          );
+  Widget _buildExpandedHeader(UsersModel? currentAccount) {
+    final String fallbackName = widget.isAdmin ? 'Admin' : 'Pegawai';
+    final String rawName = currentAccount?.nama_lengkap.trim() ?? '';
+    final String displayName = rawName.isEmpty
+        ? fallbackName
+        : _resolveGreetingName(rawName);
 
     return Column(
       children: <Widget>[
@@ -356,7 +466,7 @@ class _HomePageState extends State<HomePage>
               '$_currentGreeting, $displayName',
               style: const TextStyle(
                 fontSize: 21,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
                 color: _textColor,
               ),
             ),
@@ -520,7 +630,7 @@ class _HomePageState extends State<HomePage>
 
   Widget _buildTopIdentity() {
     final double statusBarHeight =
-        MediaQuery.viewPaddingOf(context).top;
+        _effectiveTopInset(context);
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -551,7 +661,7 @@ class _HomePageState extends State<HomePage>
                   'SIAP',
                   style: TextStyle(
                     fontSize: 20,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                     color: _textColor,
                   ),
                 ),
@@ -567,37 +677,116 @@ class _HomePageState extends State<HomePage>
               ],
             ),
           ),
-          Container(
-            width: 42,
-            height: 42,
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8EBCD),
-              shape: BoxShape.circle,
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x38000000),
-                  blurRadius: 7,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-            child: IconButton(
-              tooltip: 'Notifikasi',
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Fitur notifikasi belum tersedia.',
+          StreamBuilder<int>(
+            stream: _unreadCountStream,
+            builder: (
+              BuildContext context,
+              AsyncSnapshot<int> snapshot,
+            ) {
+              final int unreadCount = snapshot.data ?? 0;
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF8EBCD),
+                      shape: BoxShape.circle,
+                      boxShadow: <BoxShadow>[
+                        BoxShadow(
+                          color: Color(0x38000000),
+                          blurRadius: 7,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: IconButton(
+                      tooltip: 'Notifikasi',
+                      onPressed: () {
+                        Navigator.of(context).push<void>(
+                          PageRouteBuilder<void>(
+                            pageBuilder: (_, _, _) => NotificationPage(
+                              isAdmin: widget.isAdmin,
+                            ),
+                            transitionDuration:
+                                const Duration(milliseconds: 280),
+                            reverseTransitionDuration:
+                                const Duration(milliseconds: 220),
+                            transitionsBuilder: (
+                              BuildContext context,
+                              Animation<double> animation,
+                              Animation<double> secondaryAnimation,
+                              Widget child,
+                            ) {
+                              final Animation<Offset> position =
+                                  Tween<Offset>(
+                                begin: const Offset(0.05, 0),
+                                end: Offset.zero,
+                              ).animate(
+                                CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutCubic,
+                                ),
+                              );
+
+                              return FadeTransition(
+                                opacity: animation,
+                                child: SlideTransition(
+                                  position: position,
+                                  child: child,
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      },
+                      icon: const Icon(
+                        Icons.notifications_rounded,
+                        size: 21,
+                        color: Color(0xFF8B570B),
+                      ),
                     ),
                   ),
-                );
-              },
-              icon: const Icon(
-                Icons.notifications_rounded,
-                size: 21,
-                color: Color(0xFF8B570B),
-              ),
-            ),
+                  if (unreadCount > 0)
+                    Positioned(
+                      right: -5,
+                      top: -5,
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 19,
+                          minHeight: 19,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE93232),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: const Color(0xFFFFF8E6),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            unreadCount > 99
+                                ? '99+'
+                                : unreadCount.toString(),
+                            style: const TextStyle(
+                              fontSize: 9,
+                              height: 1,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -719,7 +908,7 @@ class _HomePageState extends State<HomePage>
                         filter,
                         style: TextStyle(
                           fontSize: 11,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.w600,
                           color: selected
                               ? const Color(0xFF5A3A06)
                               : _textColor,
@@ -736,7 +925,12 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  Widget _buildPegawaiCard(PegawaiDirectoryItem employee) {
+  Widget _buildPegawaiCard(
+    PegawaiDirectoryItem employee, {
+    required bool isSavedUser,
+  }) {
+    final bool bookmarkBusy = _busySavedUsers.contains(employee.uid);
+
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
@@ -759,10 +953,10 @@ class _HomePageState extends State<HomePage>
             child: Stack(
               children: <Widget>[
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(
+                  padding: EdgeInsets.fromLTRB(
                     14,
                     12,
-                    44,
+                    widget.isAdmin ? 78 : 44,
                     12,
                   ),
                   child: Row(
@@ -775,8 +969,7 @@ class _HomePageState extends State<HomePage>
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
                             Text(
                               employee.namaLengkap,
@@ -808,6 +1001,40 @@ class _HomePageState extends State<HomePage>
                     ],
                   ),
                 ),
+                if (widget.isAdmin)
+                  Positioned(
+                    top: 4,
+                    right: 34,
+                    child: bookmarkBusy
+                        ? const SizedBox(
+                            width: 38,
+                            height: 38,
+                            child: Padding(
+                              padding: EdgeInsets.all(10),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: _accentColor,
+                              ),
+                            ),
+                          )
+                        : IconButton(
+                            tooltip: isSavedUser
+                                ? 'Hapus user dari Data Tersimpan'
+                                : 'Simpan user',
+                            onPressed: () =>
+                                _toggleSavedUser(employee, isSavedUser),
+                            visualDensity: VisualDensity.compact,
+                            icon: Icon(
+                              isSavedUser
+                                  ? Icons.bookmark_rounded
+                                  : Icons.bookmark_border_rounded,
+                              color: isSavedUser
+                                  ? _accentColor
+                                  : const Color(0xFF4F4B44),
+                              size: 21,
+                            ),
+                          ),
+                  ),
                 Positioned(
                   top: 6,
                   right: 2,
@@ -832,9 +1059,7 @@ class _HomePageState extends State<HomePage>
                 Positioned(
                   right: 12,
                   bottom: 10,
-                  child: _buildStatusBadge(
-                    employee.statusKepegawaian,
-                  ),
+                  child: _buildStatusBadge(employee),
                 ),
               ],
             ),
@@ -856,22 +1081,35 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  Widget _buildStatusBadge(String status) {
+  Widget _buildStatusBadge(PegawaiDirectoryItem employee) {
+    final bool showInactive =
+        widget.isAdmin && !employee.akunAktif;
+    final String employmentStatus =
+        employee.statusKepegawaian.trim();
+
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: 12,
         vertical: 4,
       ),
       decoration: BoxDecoration(
-        color: const Color(0xFFD3EBCB),
+        color: showInactive
+            ? const Color(0xFFFFDAD6)
+            : const Color(0xFFD3EBCB),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Text(
-        status.trim().isEmpty ? 'Belum diisi' : status.trim(),
-        style: const TextStyle(
+        showInactive
+            ? 'Akun nonaktif'
+            : employmentStatus.isEmpty
+                ? 'Belum diisi'
+                : employmentStatus,
+        style: TextStyle(
           fontSize: 9,
           fontWeight: FontWeight.w600,
-          color: Color(0xFF2A7A30),
+          color: showInactive
+              ? const Color(0xFFB3261E)
+              : const Color(0xFF2A7A30),
         ),
       ),
     );
@@ -888,6 +1126,7 @@ class _HomePinnedHeaderDelegate
   final double minHeaderExtent;
   final double maxHeaderExtent;
   final double statusBarHeight;
+  final double expandedTopHeight;
   final Widget expandedContent;
   final Widget searchField;
   final Widget filterList;
@@ -896,6 +1135,7 @@ class _HomePinnedHeaderDelegate
     required this.minHeaderExtent,
     required this.maxHeaderExtent,
     required this.statusBarHeight,
+    required this.expandedTopHeight,
     required this.expandedContent,
     required this.searchField,
     required this.filterList,
@@ -971,11 +1211,10 @@ class _HomePinnedHeaderDelegate
             ),
           ),
           Positioned(
-            top: -_HomePageState._expandedTopHeight *
-                easedProgress,
+            top: -expandedTopHeight * easedProgress,
             left: 0,
             right: 0,
-            height: _HomePageState._expandedTopHeight,
+            height: expandedTopHeight,
             child: IgnorePointer(
               ignoring: easedProgress > 0.82,
               child: expandedContent,
@@ -1018,6 +1257,7 @@ class _HomePinnedHeaderDelegate
     return oldDelegate.minHeaderExtent != minHeaderExtent ||
         oldDelegate.maxHeaderExtent != maxHeaderExtent ||
         oldDelegate.statusBarHeight != statusBarHeight ||
+        oldDelegate.expandedTopHeight != expandedTopHeight ||
         oldDelegate.expandedContent != expandedContent ||
         oldDelegate.searchField != searchField ||
         oldDelegate.filterList != filterList;
@@ -1045,7 +1285,7 @@ class _EmptyState extends StatelessWidget {
               'Pegawai tidak ditemukan',
               style: TextStyle(
                 fontSize: 16,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],

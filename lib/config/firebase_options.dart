@@ -47,29 +47,30 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyB2mJh3KsxOIi8lyXo-r7DUnwfSRhYduKk',
-    appId: '1:1008333556563:web:8258507a841aea80aaafa6',
-    messagingSenderId: '1008333556563',
-    projectId: 'sikap-disbunnak',
-    authDomain: 'sikap-disbunnak.firebaseapp.com',
-    storageBucket: 'sikap-disbunnak.firebasestorage.app',
-    measurementId: 'G-M84XPY0FWQ',
+    apiKey: 'AIzaSyDUEhL0idY8RSkGafcMAoFwRrT_2dli-bc',
+    appId: '1:201811245486:web:72b7bc9608de8b0242f03f',
+    messagingSenderId: '201811245486',
+    projectId: 'siap-disbunnak',
+    authDomain: 'siap-disbunnak.firebaseapp.com',
+    storageBucket: 'siap-disbunnak.firebasestorage.app',
+    measurementId: 'G-MF2ZXK7DD2',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAakE1DhwRUXCp1StO5y31uzi9NqC7hkYw',
-    appId: '1:1008333556563:android:c534402c9816765aaaafa6',
-    messagingSenderId: '1008333556563',
-    projectId: 'sikap-disbunnak',
-    storageBucket: 'sikap-disbunnak.firebasestorage.app',
+    apiKey: 'AIzaSyDgj4v0rxMrloU8Ar8kdylAf0OJTfkslCg',
+    appId: '1:201811245486:android:f2297a3a8264166842f03f',
+    messagingSenderId: '201811245486',
+    projectId: 'siap-disbunnak',
+    storageBucket: 'siap-disbunnak.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBV46aVjSLJ_ckW_YvCL01-0xivBOG_mH4',
-    appId: '1:1008333556563:ios:de3f29aa52ec1ed6aaafa6',
-    messagingSenderId: '1008333556563',
-    projectId: 'sikap-disbunnak',
-    storageBucket: 'sikap-disbunnak.firebasestorage.app',
-    iosBundleId: 'com.example.sikapDisbunnak',
+    apiKey: 'AIzaSyD7mhTV828LozKUpfBmKFMELbiO65kzNEg',
+    appId: '1:201811245486:ios:a0836c29dbf271bc42f03f',
+    messagingSenderId: '201811245486',
+    projectId: 'siap-disbunnak',
+    storageBucket: 'siap-disbunnak.firebasestorage.app',
+    iosBundleId: 'id.kalselprov.disbunnak.siap',
   );
+
 }

@@ -59,6 +59,8 @@ class PegawaiDirectoryItem {
   }
 
   bool get isAdmin => role.trim().toLowerCase() == 'admin';
+
+  bool get isRegularUser => role.trim().toLowerCase() == 'user';
 }
 
 class PegawaiHistoryItem {
@@ -81,7 +83,9 @@ class PegawaiDirectoryService {
 
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  Stream<List<PegawaiDirectoryItem>> watchEmployees() {
+  Stream<List<PegawaiDirectoryItem>> watchEmployees({
+    bool includeInactive = false,
+  }) {
     return Stream<List<PegawaiDirectoryItem>>.multi(
       (MultiStreamController<List<PegawaiDirectoryItem>> controller) {
         QuerySnapshot<Map<String, dynamic>>? usersSnapshot;
@@ -95,6 +99,7 @@ class PegawaiDirectoryService {
               _joinEmployees(
                 usersSnapshot!,
                 profilesSnapshot!,
+                includeInactive: includeInactive,
               ),
             );
           } catch (error, stackTrace) {
@@ -219,8 +224,9 @@ class PegawaiDirectoryService {
 
   List<PegawaiDirectoryItem> _joinEmployees(
     QuerySnapshot<Map<String, dynamic>> usersSnapshot,
-    QuerySnapshot<Map<String, dynamic>> profilesSnapshot,
-  ) {
+    QuerySnapshot<Map<String, dynamic>> profilesSnapshot, {
+    required bool includeInactive,
+  }) {
     final Map<String, Map<String, dynamic>> profilesByUid =
         <String, Map<String, dynamic>>{};
 
@@ -248,7 +254,13 @@ class PegawaiDirectoryService {
         profileData: profilesByUid[uid] ?? <String, dynamic>{},
       );
 
-      if (item.akunAktif) employees.add(item);
+      if (!item.isRegularUser) {
+        continue;
+      }
+
+      if (includeInactive || item.akunAktif) {
+        employees.add(item);
+      }
     }
 
     employees.sort(

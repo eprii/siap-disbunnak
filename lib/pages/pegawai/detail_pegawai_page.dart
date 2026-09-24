@@ -1,21 +1,30 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/services.dart';
 
+import '../../config/sk_definitions.dart';
+import '../../services/admin_sk_review_service.dart';
+import '../../services/admin_user_service.dart';
 import '../../services/employee_sk_file_service.dart';
 import '../../services/pegawai_directory_service.dart';
+import '../../services/saved_sk_service.dart';
 import '../../services/sk_comment_service.dart';
+import '../../services/whatsapp_service.dart';
+import '../../widgets/feedback/siap_top_notification.dart';
 import '../../widgets/navigation/bottom_navigation_bar.dart';
 import '../../widgets/profile/pegawai_avatar.dart';
 import '../pratinjau_dokumen/pratinjau_pdf_page.dart';
 
 class DetailPegawaiPage extends StatefulWidget {
   final String employeeUid;
+  final String initialSkKey;
 
   const DetailPegawaiPage({
     super.key,
     required this.employeeUid,
+    this.initialSkKey = '',
   });
 
   @override
@@ -41,7 +50,11 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
   SkCommentItem? _replyingTo;
   bool _isSending = false;
   bool _isCurrentUserAdmin = false;
+  bool _isUpdatingAccountStatus = false;
   final Set<String> _busySkFiles = <String>{};
+  final Set<String> _busySkReviews = <String>{};
+  final Set<String> _busySavedSk = <String>{};
+  Set<String> _savedSkKeys = <String>{};
 
   @override
   void initState() {
@@ -60,7 +73,26 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
         await PegawaiDirectoryService.instance.getEmployee(uid);
 
     if (!mounted || current == null) return;
-    setState(() => _isCurrentUserAdmin = current.isAdmin);
+
+    final bool isAdmin = current.isAdmin;
+    setState(() => _isCurrentUserAdmin = isAdmin);
+
+    if (isAdmin) {
+      await _loadSavedSkKeys();
+    }
+  }
+
+  Future<void> _loadSavedSkKeys() async {
+    if (!_isCurrentUserAdmin) return;
+
+    try {
+      final Set<String> keys =
+          await SavedSkService.instance.loadSavedKeys();
+      if (!mounted) return;
+      setState(() => _savedSkKeys = keys);
+    } catch (_) {
+      // Bookmark tetap dapat dimuat kembali saat user menekan Simpan.
+    }
   }
 
   @override
@@ -81,12 +113,22 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
       setState(() {
         if (result.isEmpty) {
           _selectedSk = null;
-        } else if (_selectedSk == null ||
-            !result.any(
-              (EmployeeSkItem item) =>
-                  item.commentKey == _selectedSk!.commentKey,
-            )) {
-          _selectedSk = result.first;
+        } else if (_selectedSk == null) {
+          final int initialIndex = result.indexWhere(
+            (EmployeeSkItem item) =>
+                item.commentKey == widget.initialSkKey.trim(),
+          );
+          _selectedSk = initialIndex >= 0
+              ? result[initialIndex]
+              : result.first;
+        } else {
+          final int selectedIndex = result.indexWhere(
+            (EmployeeSkItem item) =>
+                item.commentKey == _selectedSk!.commentKey,
+          );
+          _selectedSk = selectedIndex < 0
+              ? result.first
+              : result[selectedIndex];
         }
       });
     }
@@ -148,20 +190,297 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
     setState(() => _replyingTo = null);
   }
 
-  void _showMessage(
+  Future<void> _showMessage(
     String message, {
     bool isError = false,
-  }) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor:
-              isError ? Colors.red.shade700 : null,
-        ),
+    String? title,
+  }) async {
+    if (!mounted) return;
+
+    await showSiapTopNotification(
+      context: context,
+      title: title ?? (isError ? 'Terjadi Kesalahan' : 'Berhasil'),
+      message: message,
+      type: isError
+          ? SiapNotificationType.error
+          : SiapNotificationType.success,
+    );
+  }
+
+  Future<void> _openWhatsApp(
+    PegawaiDirectoryItem employee,
+  ) async {
+    try {
+      await WhatsAppService.instance.openChat(
+        phoneNumber: employee.nomorTelepon,
       );
+    } on WhatsAppException catch (error) {
+      await _showMessage(
+        error.message,
+        isError: true,
+        title: 'WhatsApp Tidak Dapat Dibuka',
+      );
+    } catch (error) {
+      await _showMessage(
+        'Gagal membuka WhatsApp: $error',
+        isError: true,
+        title: 'WhatsApp Tidak Dapat Dibuka',
+      );
+    }
+  }
+
+  Future<void> _toggleSavedSk(EmployeeSkItem item) async {
+    if (!_isCurrentUserAdmin ||
+        !isSiapSkCollection(item.collection) ||
+        _busySavedSk.contains(item.commentKey)) {
+      return;
+    }
+
+    final String key = SavedSkService.savedKey(
+      item.collection,
+      item.documentId,
+    );
+    final bool currentlySaved = _savedSkKeys.contains(key);
+
+    setState(() => _busySavedSk.add(item.commentKey));
+
+    try {
+      if (currentlySaved) {
+        await SavedSkService.instance.removeSk(item);
+      } else {
+        await SavedSkService.instance.save(item);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        if (currentlySaved) {
+          _savedSkKeys.remove(key);
+        } else {
+          _savedSkKeys.add(key);
+        }
+      });
+
+      await _showMessage(
+        currentlySaved
+            ? '${item.jenisLabel} dihapus dari SK Tersimpan.'
+            : '${item.jenisLabel} ditambahkan ke SK Tersimpan.',
+        title: currentlySaved
+            ? 'Bookmark Dihapus'
+            : 'SK Disimpan',
+      );
+    } on SavedSkException catch (error) {
+      await _showMessage(
+        error.message,
+        isError: true,
+        title: 'SK Gagal Disimpan',
+      );
+    } catch (error) {
+      await _showMessage(
+        'Gagal memperbarui SK Tersimpan: $error',
+        isError: true,
+        title: 'SK Gagal Disimpan',
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _busySavedSk.remove(item.commentKey));
+      }
+    }
+  }
+
+  Future<void> _changeAccountStatus(
+    PegawaiDirectoryItem employee,
+  ) async {
+    if (!_isCurrentUserAdmin || _isUpdatingAccountStatus) return;
+
+    final bool nextActive = !employee.akunAktif;
+    final bool confirmed = await _confirmAdminAction(
+      title: nextActive ? 'Aktifkan Akun' : 'Nonaktifkan Akun',
+      message: nextActive
+          ? 'Akun ${employee.namaLengkap} akan dapat login dan menggunakan aplikasi kembali.'
+          : 'Akun ${employee.namaLengkap} akan langsung kehilangan akses ke aplikasi sampai diaktifkan kembali.',
+      confirmLabel: nextActive ? 'AKTIFKAN' : 'NONAKTIFKAN',
+      destructive: !nextActive,
+    );
+
+    if (!confirmed || !mounted) return;
+
+    setState(() => _isUpdatingAccountStatus = true);
+
+    try {
+      await AdminUserService.instance.updateAccountStatus(
+        userId: employee.uid,
+        active: nextActive,
+      );
+
+      if (mounted) {
+        setState(() => _isUpdatingAccountStatus = false);
+      }
+
+      await _showMessage(
+        nextActive
+            ? 'Akun ${employee.namaLengkap} berhasil diaktifkan.'
+            : 'Akun ${employee.namaLengkap} berhasil dinonaktifkan.',
+        title: 'Status Akun Diperbarui',
+      );
+    } on AdminUserException catch (error) {
+      if (mounted) {
+        setState(() => _isUpdatingAccountStatus = false);
+      }
+
+      await _showMessage(
+        error.message,
+        isError: true,
+        title: 'Status Akun Gagal Diubah',
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(() => _isUpdatingAccountStatus = false);
+      }
+
+      await _showMessage(
+        'Gagal memperbarui status akun: $error',
+        isError: true,
+        title: 'Status Akun Gagal Diubah',
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isUpdatingAccountStatus = false);
+      }
+    }
+  }
+
+  Future<void> _changeSkStatus(
+    EmployeeSkItem item,
+    SiapSkReviewStatus nextStatus,
+  ) async {
+    if (!_isCurrentUserAdmin ||
+        _busySkReviews.contains(item.commentKey)) {
+      return;
+    }
+
+    final SiapSkReviewStatus currentStatus =
+        normalizeSiapSkStatus(item.status);
+    if (currentStatus == nextStatus) return;
+
+    final String nextLabel = siapSkStatusLabel(
+      siapSkStatusValue(nextStatus),
+    );
+    final bool confirmed = await _confirmAdminAction(
+      title: 'Ubah Status SK',
+      message:
+          'Status ${item.jenisLabel} akan diubah menjadi "$nextLabel".',
+      confirmLabel: 'UBAH STATUS',
+      destructive: nextStatus == SiapSkReviewStatus.rejected,
+    );
+
+    if (!confirmed || !mounted) return;
+
+    setState(() {
+      _busySkReviews.add(item.commentKey);
+    });
+
+    try {
+      await AdminSkReviewService.instance.updateStatus(
+        collection: item.collection,
+        documentId: item.documentId,
+        status: nextStatus,
+      );
+
+      if (!mounted) return;
+      await _refresh();
+
+      if (mounted) {
+        setState(() {
+          _busySkReviews.remove(item.commentKey);
+        });
+      }
+
+      await _showMessage(
+        'Status ${item.jenisLabel} berhasil diubah menjadi $nextLabel.',
+        title: 'Status SK Diperbarui',
+      );
+    } on AdminSkReviewException catch (error) {
+      if (mounted) {
+        setState(() {
+          _busySkReviews.remove(item.commentKey);
+        });
+      }
+
+      await _showMessage(
+        error.message,
+        isError: true,
+        title: 'Status SK Gagal Diubah',
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _busySkReviews.remove(item.commentKey);
+        });
+      }
+
+      await _showMessage(
+        'Gagal memperbarui status SK: $error',
+        isError: true,
+        title: 'Status SK Gagal Diubah',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busySkReviews.remove(item.commentKey);
+        });
+      }
+    }
+  }
+
+  Future<bool> _confirmAdminAction({
+    required String title,
+    required String message,
+    required String confirmLabel,
+    bool destructive = false,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) {
+            return AlertDialog(
+              backgroundColor: _card,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(17),
+              ),
+              title: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              content: Text(
+                message,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () =>
+                      Navigator.pop(dialogContext, false),
+                  child: const Text('BATAL'),
+                ),
+                FilledButton(
+                  onPressed: () =>
+                      Navigator.pop(dialogContext, true),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: destructive
+                        ? const Color(0xFFB3261E)
+                        : _accent,
+                  ),
+                  child: Text(confirmLabel),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
   }
 
   @override
@@ -253,6 +572,10 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
             sliver: SliverList(
               delegate: SliverChildListDelegate(<Widget>[
                 _buildIdentityCard(employee),
+                if (_isCurrentUserAdmin) ...<Widget>[
+                  const SizedBox(height: 14),
+                  _buildAdminAccountControl(employee),
+                ],
                 const SizedBox(height: 14),
                 _buildEmploymentCard(employee),
                 const SizedBox(height: 14),
@@ -260,7 +583,7 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
                 const SizedBox(height: 14),
                 _buildSkSection(employee),
                 const SizedBox(height: 14),
-                _buildCommentSection(),
+                _buildCommentSection(employee),
               ]),
             ),
           ),
@@ -316,6 +639,82 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
             ),
           ),
           _statusBadge(employee.statusKepegawaian),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdminAccountControl(
+    PegawaiDirectoryItem employee,
+  ) {
+    final bool active = employee.akunAktif;
+
+    return _SectionCard(
+      title: 'Status Akun',
+      icon: Icons.manage_accounts_outlined,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  active ? 'Aktif' : 'Nonaktif',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: active
+                        ? const Color(0xFF2A7A30)
+                        : const Color(0xFFB3261E),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  active
+                      ? 'Pengguna dapat login dan menggunakan aplikasi.'
+                      : 'Pengguna tidak dapat mengakses aplikasi.',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    height: 1.35,
+                    color: _muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            height: 38,
+            child: FilledButton(
+              onPressed: _isUpdatingAccountStatus
+                  ? null
+                  : () => _changeAccountStatus(employee),
+              style: FilledButton.styleFrom(
+                backgroundColor: active
+                    ? const Color(0xFFB3261E)
+                    : const Color(0xFF2A7A30),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              child: _isUpdatingAccountStatus
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(active ? 'NONAKTIFKAN' : 'AKTIFKAN'),
+            ),
+          ),
         ],
       ),
     );
@@ -391,6 +790,7 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
           icon: Icons.school_outlined,
           child: _MiniHistoryBlock(
             items: employee.riwayatPendidikan,
+            expandable: true,
           ),
         ),
         const SizedBox(height: 14),
@@ -465,6 +865,25 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
                   isBusy: _busySkFiles.contains(
                     items[index].commentKey,
                   ),
+                  isAdmin: _isCurrentUserAdmin,
+                  isReviewBusy: _busySkReviews.contains(
+                    items[index].commentKey,
+                  ),
+                  canSave: _isCurrentUserAdmin &&
+                      isSiapSkCollection(items[index].collection),
+                  isSaved: _savedSkKeys.contains(
+                    SavedSkService.savedKey(
+                      items[index].collection,
+                      items[index].documentId,
+                    ),
+                  ),
+                  isSaveBusy: _busySavedSk.contains(
+                    items[index].commentKey,
+                  ),
+                  onToggleSaved: () => _toggleSavedSk(items[index]),
+                  onStatusChanged: (SiapSkReviewStatus status) {
+                    _changeSkStatus(items[index], status);
+                  },
                   onPreview: () => _previewSk(
                     employee,
                     items[index],
@@ -490,7 +909,7 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
     );
   }
 
-  Widget _buildCommentSection() {
+  Widget _buildCommentSection(PegawaiDirectoryItem employee) {
     final EmployeeSkItem? selected = _selectedSk;
 
     return _SectionCard(
@@ -566,22 +985,10 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
                       );
                     }
 
-                    return Column(
-                      children: <Widget>[
-                        for (int index = 0;
-                            index < comments.length;
-                            index++) ...<Widget>[
-                          _CommentCard(
-                            comment: comments[index],
-                            onReply: () =>
-                                _startReply(comments[index]),
-                            onDelete: () =>
-                                _deleteComment(comments[index]),
-                          ),
-                          if (index != comments.length - 1)
-                            const SizedBox(height: 10),
-                        ],
-                      ],
+                    return _CommentListViewport(
+                      comments: comments,
+                      onReply: _startReply,
+                      onDelete: _deleteComment,
                     );
                   },
                 ),
@@ -621,6 +1028,26 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: <Widget>[
+                    if (_isCurrentUserAdmin) ...<Widget>[
+                      SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: FilledButton(
+                          onPressed: () => _openWhatsApp(employee),
+                          style: FilledButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            backgroundColor: const Color(0xFF1FAF5A),
+                            foregroundColor: Colors.white,
+                            shape: const CircleBorder(),
+                          ),
+                          child: const FaIcon(
+                            FontAwesomeIcons.whatsapp,
+                            size: 22,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                    ],
                     Expanded(
                       child: TextField(
                         controller: _commentController,
@@ -667,9 +1094,12 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
                         style: FilledButton.styleFrom(
                           padding: EdgeInsets.zero,
                           backgroundColor: _accent,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                          shape: _isCurrentUserAdmin
+                              ? const CircleBorder()
+                              : RoundedRectangleBorder(
+                                  borderRadius:
+                                      BorderRadius.circular(12),
+                                ),
                         ),
                         child: _isSending
                             ? const SizedBox(
@@ -717,11 +1147,10 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
     });
 
     try {
-      final String localPath =
+      final pdfBytes =
           await EmployeeSkFileService.instance
-              .preparePreviewFile(
+              .preparePreviewData(
         storagePath: item.filePath,
-        fileName: item.fileName,
       );
 
       if (!mounted) return;
@@ -729,7 +1158,7 @@ class _DetailPegawaiPageState extends State<DetailPegawaiPage> {
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
           builder: (_) => PratinjauPdfPage(
-            filePath: localPath,
+            fileBytes: pdfBytes,
             fileName: item.fileName.trim().isEmpty
                 ? '${item.jenisLabel}.pdf'
                 : item.fileName.trim(),
@@ -1267,17 +1696,29 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-class _MiniHistoryBlock extends StatelessWidget {
+class _MiniHistoryBlock extends StatefulWidget {
   final List<PegawaiHistoryItem> items;
+  final bool expandable;
 
   const _MiniHistoryBlock({
     required this.items,
+    this.expandable = false,
   });
 
   @override
+  State<_MiniHistoryBlock> createState() =>
+      _MiniHistoryBlockState();
+}
+
+class _MiniHistoryBlockState extends State<_MiniHistoryBlock> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final bool canExpand =
+        widget.expandable && widget.items.length > 3;
     final List<PegawaiHistoryItem> visible =
-        items.take(3).toList();
+        _expanded ? widget.items : widget.items.take(3).toList();
 
     return Container(
       width: double.infinity,
@@ -1301,9 +1742,13 @@ class _MiniHistoryBlock extends StatelessWidget {
               ),
             )
           else
-            for (final PegawaiHistoryItem item in visible)
+            for (int index = 0;
+                index < visible.length;
+                index++)
               Padding(
-                padding: const EdgeInsets.only(bottom: 6),
+                padding: EdgeInsets.only(
+                  bottom: index == visible.length - 1 ? 0 : 6,
+                ),
                 child: Row(
                   children: <Widget>[
                     const Icon(
@@ -1314,12 +1759,12 @@ class _MiniHistoryBlock extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        item.title,
+                        visible[index].title,
                         style: const TextStyle(fontSize: 11),
                       ),
                     ),
                     Text(
-                      item.year.toString(),
+                      visible[index].year.toString(),
                       style: const TextStyle(
                         fontSize: 10,
                         color: Color(0xFF756F65),
@@ -1328,15 +1773,57 @@ class _MiniHistoryBlock extends StatelessWidget {
                   ],
                 ),
               ),
-          if (items.length > 3)
+          if (canExpand) ...<Widget>[
+            const SizedBox(height: 8),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  setState(() => _expanded = !_expanded);
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 2,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        _expanded
+                            ? 'Sembunyikan'
+                            : 'Lihat selengkapnya',
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          color: Color(0xFF9D6A18),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                      Icon(
+                        _expanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        size: 17,
+                        color: const Color(0xFF9D6A18),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ] else if (widget.items.length > 3) ...<Widget>[
+            const SizedBox(height: 6),
             Text(
-              '+${items.length - 3} riwayat lainnya',
+              '+${widget.items.length - 3} riwayat lainnya',
               style: const TextStyle(
                 fontSize: 10,
                 color: Color(0xFF9D6A18),
                 fontWeight: FontWeight.w600,
               ),
             ),
+          ],
         ],
       ),
     );
@@ -1348,24 +1835,41 @@ class _SkCard extends StatelessWidget {
   final bool selected;
   final bool canAccessFile;
   final bool isBusy;
+  final bool isAdmin;
+  final bool isReviewBusy;
+  final bool canSave;
+  final bool isSaved;
+  final bool isSaveBusy;
   final VoidCallback onTap;
   final VoidCallback onPreview;
   final VoidCallback onDownload;
+  final VoidCallback onToggleSaved;
+  final ValueChanged<SiapSkReviewStatus> onStatusChanged;
 
   const _SkCard({
     required this.item,
     required this.selected,
     required this.canAccessFile,
     required this.isBusy,
+    required this.isAdmin,
+    required this.isReviewBusy,
+    required this.canSave,
+    required this.isSaved,
+    required this.isSaveBusy,
     required this.onTap,
     required this.onPreview,
     required this.onDownload,
+    required this.onToggleSaved,
+    required this.onStatusChanged,
   });
 
   @override
   Widget build(BuildContext context) {
     final bool hasFile = item.filePath.trim().isNotEmpty;
-    final bool showActions = canAccessFile && hasFile;
+    final bool showFileActions = canAccessFile && hasFile;
+    final bool showActions = showFileActions || canSave;
+    final SiapSkReviewStatus reviewStatus =
+        normalizeSiapSkStatus(item.status);
 
     return Material(
       color: selected
@@ -1404,8 +1908,7 @@ class _SkCard extends StatelessWidget {
               const SizedBox(width: 9),
               Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
                       item.jenisLabel,
@@ -1453,39 +1956,170 @@ class _SkCard extends StatelessWidget {
                             : const Color(0xFF999999),
                       ),
                     ),
+                    const SizedBox(height: 7),
+                    Row(
+                      children: <Widget>[
+                        _SkReviewStatusBadge(status: reviewStatus),
+                        if (isAdmin) ...<Widget>[
+                          const SizedBox(width: 4),
+                          if (isReviewBusy)
+                            const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: Padding(
+                                padding: EdgeInsets.all(5),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Color(0xFF9D6A18),
+                                ),
+                              ),
+                            )
+                          else
+                            SizedBox(
+                              width: 26,
+                              height: 26,
+                              child: PopupMenuButton<SiapSkReviewStatus>(
+                                tooltip: 'Ubah status SK',
+                                padding: EdgeInsets.zero,
+                                iconSize: 18,
+                                icon: const Icon(
+                                  Icons.keyboard_arrow_down_rounded,
+                                  color: Color(0xFF6B6255),
+                                ),
+                                onSelected: onStatusChanged,
+                                itemBuilder: (_) =>
+                                    <PopupMenuEntry<SiapSkReviewStatus>>[
+                                  const PopupMenuItem<SiapSkReviewStatus>(
+                                    value: SiapSkReviewStatus.pending,
+                                    child: Text('Belum diperiksa'),
+                                  ),
+                                  const PopupMenuItem<SiapSkReviewStatus>(
+                                    value: SiapSkReviewStatus.approved,
+                                    child: Text('Disetujui'),
+                                  ),
+                                  const PopupMenuItem<SiapSkReviewStatus>(
+                                    value: SiapSkReviewStatus.rejected,
+                                    child: Text('Ditolak'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ],
+                    ),
                   ],
                 ),
               ),
               if (showActions) ...<Widget>[
                 const SizedBox(width: 5),
-                if (isBusy)
-                  const SizedBox(
-                    width: 30,
-                    height: 30,
-                    child: Padding(
-                      padding: EdgeInsets.all(7),
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Color(0xFF9D6A18),
-                      ),
-                    ),
-                  )
-                else ...<Widget>[
-                  _SkActionButton(
-                    tooltip: 'Pratinjau dokumen',
-                    icon: Icons.visibility_outlined,
-                    onTap: onPreview,
-                  ),
-                  const SizedBox(width: 5),
-                  _SkActionButton(
-                    tooltip: 'Unduh dokumen',
-                    icon: Icons.download_outlined,
-                    onTap: onDownload,
-                  ),
-                ],
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    if (showFileActions) ...<Widget>[
+                      if (isBusy)
+                        const SizedBox(
+                          width: 30,
+                          height: 30,
+                          child: Padding(
+                            padding: EdgeInsets.all(7),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF9D6A18),
+                            ),
+                          ),
+                        )
+                      else ...<Widget>[
+                        _SkActionButton(
+                          tooltip: 'Pratinjau dokumen',
+                          icon: Icons.visibility_outlined,
+                          onTap: onPreview,
+                        ),
+                        const SizedBox(height: 5),
+                        _SkActionButton(
+                          tooltip: 'Unduh dokumen',
+                          icon: Icons.download_outlined,
+                          onTap: onDownload,
+                        ),
+                      ],
+                    ],
+                    if (canSave) ...<Widget>[
+                      if (showFileActions) const SizedBox(height: 5),
+                      if (isSaveBusy)
+                        const SizedBox(
+                          width: 30,
+                          height: 30,
+                          child: Padding(
+                            padding: EdgeInsets.all(7),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF9D6A18),
+                            ),
+                          ),
+                        )
+                      else
+                        _SkActionButton(
+                          tooltip: isSaved
+                              ? 'Hapus dari SK Tersimpan'
+                              : 'Simpan SK',
+                          icon: isSaved
+                              ? Icons.bookmark_rounded
+                              : Icons.bookmark_border_rounded,
+                          onTap: onToggleSaved,
+                        ),
+                    ],
+                  ],
+                ),
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SkReviewStatusBadge extends StatelessWidget {
+  final SiapSkReviewStatus status;
+
+  const _SkReviewStatusBadge({
+    required this.status,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color background;
+    final Color foreground;
+
+    switch (status) {
+      case SiapSkReviewStatus.pending:
+        background = const Color(0xFFFFEAC0);
+        foreground = const Color(0xFF8A5A00);
+        break;
+      case SiapSkReviewStatus.approved:
+        background = const Color(0xFFD7EED0);
+        foreground = const Color(0xFF2A7A30);
+        break;
+      case SiapSkReviewStatus.rejected:
+        background = const Color(0xFFFFDAD6);
+        foreground = const Color(0xFFB3261E);
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 8,
+        vertical: 4,
+      ),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        siapSkStatusLabel(siapSkStatusValue(status)),
+        style: TextStyle(
+          fontSize: 8.5,
+          fontWeight: FontWeight.w700,
+          color: foreground,
         ),
       ),
     );
@@ -1555,6 +2189,128 @@ class _SelectedSkHint extends StatelessWidget {
           fontSize: 11,
           color: Color(0xFF76500D),
           fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _CommentListViewport extends StatefulWidget {
+  final List<SkCommentItem> comments;
+  final ValueChanged<SkCommentItem> onReply;
+  final ValueChanged<SkCommentItem> onDelete;
+
+  const _CommentListViewport({
+    required this.comments,
+    required this.onReply,
+    required this.onDelete,
+  });
+
+  @override
+  State<_CommentListViewport> createState() =>
+      _CommentListViewportState();
+}
+
+class _CommentListViewportState extends State<_CommentListViewport> {
+  static const double _fixedHeight = 430;
+
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Widget _buildItem(int index) {
+    return _CommentCard(
+      comment: widget.comments[index],
+      onReply: () => widget.onReply(widget.comments[index]),
+      onDelete: () => widget.onDelete(widget.comments[index]),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.comments.length <= 3) {
+      return Column(
+        children: <Widget>[
+          for (int index = 0;
+              index < widget.comments.length;
+              index++) ...<Widget>[
+            _buildItem(index),
+            if (index != widget.comments.length - 1)
+              const SizedBox(height: 10),
+          ],
+        ],
+      );
+    }
+
+    return SizedBox(
+      height: _fixedHeight,
+      child: Scrollbar(
+        controller: _controller,
+        thumbVisibility: true,
+        child: ListView.separated(
+          controller: _controller,
+          primary: false,
+          padding: const EdgeInsets.only(right: 7),
+          physics: const ClampingScrollPhysics(),
+          itemCount: widget.comments.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          itemBuilder: (_, int index) => _buildItem(index),
+        ),
+      ),
+    );
+  }
+}
+
+class _CommentActionChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _CommentActionChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFFFEFD7),
+      borderRadius: BorderRadius.circular(9),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(9),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 34),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: 5,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(
+                  icon,
+                  size: 15,
+                  color: const Color(0xFF8A5A00),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF8A5A00),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1656,35 +2412,26 @@ class _CommentCardState extends State<_CommentCard> {
           ),
           const SizedBox(height: 8),
           Wrap(
-            spacing: 14,
+            spacing: 8,
+            runSpacing: 6,
             children: <Widget>[
-              InkWell(
+              _CommentActionChip(
+                icon: Icons.reply_rounded,
+                label: 'Balas',
                 onTap: widget.onReply,
-                child: const Text(
-                  'Balas',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF9D6A18),
-                  ),
-                ),
               ),
-              InkWell(
+              _CommentActionChip(
+                icon: _showReplies
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+                label: _showReplies
+                    ? 'Sembunyikan balasan'
+                    : widget.comment.jumlahBalasan > 0
+                        ? 'Lihat ${widget.comment.jumlahBalasan} balasan'
+                        : 'Lihat balasan',
                 onTap: () {
                   setState(() => _showReplies = !_showReplies);
                 },
-                child: Text(
-                  _showReplies
-                      ? 'Sembunyikan balasan'
-                      : widget.comment.jumlahBalasan > 0
-                          ? 'Lihat ${widget.comment.jumlahBalasan} balasan'
-                          : 'Lihat balasan',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF5C6F8B),
-                  ),
-                ),
               ),
             ],
           ),
@@ -1730,16 +2477,28 @@ class _CommentCardState extends State<_CommentCard> {
                   );
                 }
 
-                return Column(
-                  children: <Widget>[
-                    for (int index = 0;
-                        index < replies.length;
-                        index++) ...<Widget>[
-                      _ReplyTile(reply: replies[index]),
-                      if (index != replies.length - 1)
-                        const SizedBox(height: 8),
+                return Container(
+                  margin: const EdgeInsets.only(left: 15),
+                  padding: const EdgeInsets.only(left: 14),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      left: BorderSide(
+                        color: Color(0xFFC9B27F),
+                        width: 1.4,
+                      ),
+                    ),
+                  ),
+                  child: Column(
+                    children: <Widget>[
+                      for (int index = 0;
+                          index < replies.length;
+                          index++) ...<Widget>[
+                        _ReplyTile(reply: replies[index]),
+                        if (index != replies.length - 1)
+                          const SizedBox(height: 9),
+                      ],
                     ],
-                  ],
+                  ),
                 );
               },
             ),
@@ -1774,33 +2533,43 @@ class _ReplyTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(left: 18),
-      padding: const EdgeInsets.all(9),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F5ED),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            reply.namaPengguna,
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-            ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const CircleAvatar(
+          radius: 11,
+          backgroundColor: Color(0xFFFFEFD7),
+          child: Icon(
+            Icons.person_rounded,
+            size: 13,
+            color: Color(0xFF9D6A18),
           ),
-          const SizedBox(height: 4),
-          Text(
-            reply.isiBalasan,
-            style: const TextStyle(
-              fontSize: 11,
-              height: 1.3,
-            ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                reply.namaPengguna,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                reply.isiBalasan,
+                style: const TextStyle(
+                  fontSize: 11,
+                  height: 1.35,
+                  color: Color(0xFF38352F),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

@@ -1,8 +1,8 @@
-import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 class SkPdfPicker extends StatelessWidget {
-  final File? file;
+  final PlatformFile? file;
   final VoidCallback onPressed;
 
   const SkPdfPicker({
@@ -13,7 +13,9 @@ class SkPdfPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fileName = file?.path.replaceAll('\\', '/').split('/').last;
+    final String? fileName = file?.name.trim().isEmpty == true
+        ? null
+        : file?.name.trim();
 
     return InkWell(
       onTap: onPressed,
@@ -26,7 +28,7 @@ class SkPdfPicker extends StatelessWidget {
           border: Border.all(color: const Color(0x2A6A5527)),
         ),
         child: Row(
-          children: [
+          children: <Widget>[
             const Icon(
               Icons.picture_as_pdf_outlined,
               color: Color(0xFF9B3B2C),

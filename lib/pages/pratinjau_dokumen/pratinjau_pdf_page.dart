@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -43,7 +45,8 @@ class PratinjauPdfDetail {
 }
 
 class PratinjauPdfPage extends StatefulWidget {
-  final String filePath;
+  final String? filePath;
+  final Uint8List? fileBytes;
   final String fileName;
   final String jenisSk;
   final String nomorDokumen;
@@ -54,7 +57,8 @@ class PratinjauPdfPage extends StatefulWidget {
 
   const PratinjauPdfPage({
     super.key,
-    required this.filePath,
+    this.filePath,
+    this.fileBytes,
     required this.fileName,
     required this.jenisSk,
     required this.nomorDokumen,
@@ -62,7 +66,11 @@ class PratinjauPdfPage extends StatefulWidget {
     required this.pemilik,
     required this.jabatan,
     required this.details,
-  });
+  }) : assert(
+         fileBytes != null ||
+             (filePath != null && filePath != ''),
+         'Pratinjau PDF membutuhkan fileBytes atau filePath.',
+       );
 
   @override
   State<PratinjauPdfPage> createState() => _PratinjauPdfPageState();
@@ -73,7 +81,8 @@ class _PratinjauPdfPageState extends State<PratinjauPdfPage> {
 
   bool get _isInteractingWithPdf => _activePdfPointers.isNotEmpty;
 
-  String get filePath => widget.filePath;
+  String? get filePath => widget.filePath;
+  Uint8List? get fileBytes => widget.fileBytes;
   String get fileName => widget.fileName;
   String get jenisSk => widget.jenisSk;
   String get nomorDokumen => widget.nomorDokumen;
@@ -289,7 +298,12 @@ class _PratinjauPdfPageState extends State<PratinjauPdfPage> {
                                 onPointerDown: _registerPdfPointer,
                                 onPointerUp: _unregisterPdfPointer,
                                 onPointerCancel: _unregisterPdfPointer,
-                                child: PdfViewer.file(filePath),
+                                child: fileBytes != null
+                                    ? PdfViewer.data(
+                                        fileBytes!,
+                                        sourceName: fileName,
+                                      )
+                                    : PdfViewer.file(filePath!),
                               ),
                             ),
                           ),

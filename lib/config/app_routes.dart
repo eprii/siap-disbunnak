@@ -131,6 +131,7 @@ class AuthGate extends StatelessWidget {
         final User? firebaseUser = authSnapshot.data;
 
         if (firebaseUser == null) {
+          SiapNavigationController.clearSession();
           return const LoginPage();
         }
 
@@ -169,14 +170,16 @@ class AuthGate extends StatelessWidget {
             final String role = user.role.trim().toLowerCase();
 
             if (role == 'admin') {
-              return const SiapBottomNavigationBar(
+              return SiapBottomNavigationBar(
                 isAdmin: true,
+                sessionUid: firebaseUser.uid,
               );
             }
 
             if (role == 'user') {
-              return const SiapBottomNavigationBar(
+              return SiapBottomNavigationBar(
                 isAdmin: false,
+                sessionUid: firebaseUser.uid,
               );
             }
 

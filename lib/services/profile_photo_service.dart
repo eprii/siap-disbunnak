@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -10,6 +10,7 @@ class ProfilePhotoService {
       ProfilePhotoService._();
 
   static const String _bucket = 'profile-photos';
+  static const int maxPhotoBytes = 2 * 1024 * 1024;
 
   SupabaseClient get _client {
     try {
@@ -23,7 +24,8 @@ class ProfilePhotoService {
 
   Future<String> uploadPhoto({
     required String uid,
-    required File file,
+    required Uint8List bytes,
+    required String originalFileName,
   }) async {
     final String cleanUid = uid.trim();
     final firebase_auth.User? currentUser =
@@ -37,34 +39,27 @@ class ProfilePhotoService {
       );
     }
 
-    if (!await file.exists()) {
-      throw const ProfilePhotoException(
-        'File foto tidak ditemukan.',
-      );
-    }
-
-    final int size = await file.length();
-    if (size <= 0) {
+    if (bytes.isEmpty) {
       throw const ProfilePhotoException(
         'File foto kosong atau tidak dapat dibaca.',
       );
     }
 
-    const int maxBytes = 5 * 1024 * 1024;
-    if (size > maxBytes) {
+    if (bytes.length > maxPhotoBytes) {
       throw const ProfilePhotoException(
-        'Ukuran foto profil maksimal 5 MB.',
+        'Foto yang dipilih memiliki ukuran lebih dari 2 MB. '
+        'Silakan perkecil ukuran file atau gunakan kompresor foto online.',
       );
     }
 
-    final String extension = _extensionFromPath(file.path);
+    final String extension =
+        _extensionFromFileName(originalFileName);
     final String storagePath =
         '$cleanUid/avatar_'
         '${DateTime.now().millisecondsSinceEpoch}'
         '.$extension';
 
     try {
-      // Memastikan token Firebase masih tersedia sebelum request Storage.
       final String? firebaseToken =
           await currentUser.getIdToken(false);
 
@@ -75,9 +70,9 @@ class ProfilePhotoService {
         );
       }
 
-      await _client.storage.from(_bucket).upload(
+      await _client.storage.from(_bucket).uploadBinary(
             storagePath,
-            file,
+            bytes,
             fileOptions: FileOptions(
               upsert: false,
               contentType: _contentType(extension),
@@ -217,19 +212,20 @@ class ProfilePhotoService {
     return message.isEmpty ? fallback : message;
   }
 
-  static String _extensionFromPath(
-    String path,
+  static String _extensionFromFileName(
+    String fileName,
   ) {
-    final String fileName = path.split('/').last;
-    final int dotIndex = fileName.lastIndexOf('.');
+    final String cleanName =
+        fileName.replaceAll('\\', '/').split('/').last;
+    final int dotIndex = cleanName.lastIndexOf('.');
 
     if (dotIndex < 0 ||
-        dotIndex == fileName.length - 1) {
+        dotIndex == cleanName.length - 1) {
       return 'jpg';
     }
 
     final String extension =
-        fileName.substring(dotIndex + 1).toLowerCase();
+        cleanName.substring(dotIndex + 1).toLowerCase();
 
     if (<String>{
       'jpg',
@@ -259,13 +255,10 @@ class ProfilePhotoService {
   }
 }
 
-class ProfilePhotoException
-    implements Exception {
+class ProfilePhotoException implements Exception {
   final String message;
 
-  const ProfilePhotoException(
-    this.message,
-  );
+  const ProfilePhotoException(this.message);
 
   @override
   String toString() => message;

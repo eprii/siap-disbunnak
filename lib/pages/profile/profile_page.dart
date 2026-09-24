@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../config/app_theme.dart';
 import '../../models/profilepegawai_model.dart';
 import '../../models/users_model.dart';
 import '../../services/auth_service.dart';
@@ -13,6 +14,7 @@ import '../../services/profile_photo_service.dart';
 import '../../services/profile_service.dart';
 import '../../widgets/feedback/siap_top_notification.dart';
 import '../../widgets/navigation/bottom_navigation_bar.dart';
+import '../../widgets/sk/user_sk_dashboard.dart';
 import 'edit_profile_page.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -456,7 +458,7 @@ class _ProfilePageState extends State<ProfilePage>
                             ),
                             _InformationRow(
                               label: 'Diklat terakhir',
-                              value: _nameAndYear(
+                              value: _trainingSummary(
                                 data.extendedData.latihanJabatan,
                                 data.extendedData
                                     .tahunLatihanJabatan,
@@ -485,8 +487,14 @@ class _ProfilePageState extends State<ProfilePage>
                           title: 'Riwayat Jabatan',
                           icon: Icons.timeline_rounded,
                           items: _positionHistoryItems(
+                            data.profile,
                             data.extendedData.positionHistory,
                           ),
+                        ),
+                        const SizedBox(height: 14),
+                        UserSkDashboard(
+                          user: data.user,
+                          profile: data.profile,
                         ),
                         const SizedBox(height: 22),
                         SizedBox(
@@ -545,6 +553,14 @@ class _ProfilePageState extends State<ProfilePage>
     return '$cleanName ($year)';
   }
 
+  static String _trainingSummary(String name, int year) {
+    final String cleanName = name.trim();
+    if (cleanName.isEmpty && year <= 0) {
+      return 'Belum ada diklat';
+    }
+    return _nameAndYear(cleanName, year);
+  }
+
   static String _placeAndDate(String place, DateTime? date) {
     final String cleanPlace = place.trim();
     if (cleanPlace.isEmpty && date == null) return '-';
@@ -571,22 +587,44 @@ class _ProfilePageState extends State<ProfilePage>
   }
 
   static List<_HistoryDisplayItem> _positionHistoryItems(
+    ProfilePegawaiModel profile,
     List<PositionHistoryEntry> history,
   ) {
-    return history
-        .asMap()
-        .entries
-        .map(
-          (MapEntry<int, PositionHistoryEntry> entry) =>
-              _HistoryDisplayItem(
-            title: entry.value.jabatan,
-            year: entry.value.tahun,
-            subtitle: entry.key == 0
-                ? 'Jabatan sekarang'
-                : 'Jabatan sebelumnya',
+    final String currentPosition =
+        profile.jabatan_sekarang.trim();
+    final int currentYear =
+        profile.tahun_jabatan_sekarang;
+    final List<_HistoryDisplayItem> items =
+        <_HistoryDisplayItem>[];
+
+    if (currentPosition.isNotEmpty && currentYear > 0) {
+      items.add(
+        _HistoryDisplayItem(
+          title: currentPosition,
+          year: currentYear,
+          subtitle: 'Jabatan sekarang',
+        ),
+      );
+    }
+
+    items.addAll(
+      history
+          .where(
+            (PositionHistoryEntry entry) =>
+                entry.jabatan.trim().toLowerCase() !=
+                    currentPosition.toLowerCase() ||
+                entry.tahun != currentYear,
+          )
+          .map(
+            (PositionHistoryEntry entry) => _HistoryDisplayItem(
+              title: entry.jabatan,
+              year: entry.tahun,
+              subtitle: 'Jabatan sebelumnya',
+            ),
           ),
-        )
-        .toList();
+    );
+
+    return items;
   }
 
   static List<_HistoryDisplayItem> _educationHistoryItems(
@@ -923,20 +961,8 @@ class _ProfileSectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 17, 20, 12),
-      decoration: BoxDecoration(
-        color: const Color(0xEFFFFCF5),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: const Color(0x66FFFFFF),
-          width: 1,
-        ),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 7,
-            offset: Offset(0, 4),
-          ),
-        ],
+      decoration: AppTheme.glassSurfaceDecoration(
+        radius: 14,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1089,20 +1115,8 @@ class _ExpandableHistoryCardState
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 17),
-      decoration: BoxDecoration(
-        color: const Color(0xEFFFFCF5),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: const Color(0x66FFFFFF),
-          width: 1,
-        ),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 7,
-            offset: Offset(0, 4),
-          ),
-        ],
+      decoration: AppTheme.glassSurfaceDecoration(
+        radius: 14,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

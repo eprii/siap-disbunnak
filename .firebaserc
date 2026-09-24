@@ -1,5 +1,15 @@
 {
   "projects": {
-    "default": "sikap-disbunnak"
-  }
+    "default": "siap-disbunnak"
+  },
+  "targets": {
+    "siap-disbunnak": {
+      "hosting": {
+        "main": [
+          "siap-disbunnak"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

@@ -1,15 +1,15 @@
-import 'dart:io';
-import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../config/app_theme.dart';
 import '../../../models/profilepegawai_model.dart';
 import '../../../models/users_model.dart';
 import '../../../services/firestore_service.dart';
 import '../../../services/sk_document_service.dart';
+import '../../../utils/dropdown_options.dart';
 import '../../../widgets/navigation/bottom_navigation_bar.dart';
 import '../../../widgets/profile/pegawai_avatar.dart';
 import '../../pratinjau_dokumen/pratinjau_pdf_page.dart';
@@ -154,17 +154,21 @@ class _FormSkPangkatPageState extends State<FormSkPangkatPage> with SingleTicker
       type: FileType.custom,
       allowedExtensions: const <String>['pdf'],
       allowMultiple: false,
-      withData: false,
+      withData: true,
     );
     if (result == null || result.files.isEmpty || !mounted) return;
     final PlatformFile file = result.files.single;
-    const int maxBytes = 5 * 1024 * 1024;
+    final bytes = file.bytes;
     if (file.extension?.toLowerCase() != 'pdf') {
       _showMessage('File harus berformat PDF.');
       return;
     }
-    if (file.size > maxBytes) {
-      _showMessage('Ukuran PDF maksimal 5 MB.');
+    if (bytes == null || bytes.isEmpty) {
+      _showMessage('File PDF tidak dapat dibaca. Silakan pilih file lain.');
+      return;
+    }
+    if (bytes.length > SkDocumentService.maxFileBytes) {
+      _showMessage('Ukuran PDF maksimal 3 MB.');
       return;
     }
     setState(() { _pdfFile = file; });
@@ -304,11 +308,11 @@ class _FormSkPangkatPageState extends State<FormSkPangkatPage> with SingleTicker
     setState(() { _isSubmitting = true; });
     try {
       final PlatformFile selectedPdf = _pdfFile!;
-      final String? localPath = selectedPdf.path;
+      final pdfBytes = selectedPdf.bytes;
 
-      if (localPath == null || localPath.trim().isEmpty) {
+      if (pdfBytes == null || pdfBytes.isEmpty) {
         throw const SkDocumentException(
-          'File PDF tidak dapat dibaca dari perangkat.',
+          'File PDF tidak dapat dibaca. Silakan pilih file kembali.',
         );
       }
 
@@ -318,7 +322,7 @@ class _FormSkPangkatPageState extends State<FormSkPangkatPage> with SingleTicker
       await SkDocumentService.instance.createDocument(
         collection: 'sk_pangkat',
         storageFolder: 'pangkat',
-        file: File(localPath),
+        fileBytes: pdfBytes,
         originalFileName: selectedPdf.name,
         data: <String, dynamic>{
           'nomor_sk_pangkat': _nomorSkController.text.trim(),
@@ -326,7 +330,11 @@ class _FormSkPangkatPageState extends State<FormSkPangkatPage> with SingleTicker
           'tmt_pangkat': Timestamp.fromDate(_tmtPangkat!),
           'golongan': _golonganController.text.trim(),
           'masa_kerja_tahun': _masaTahunController.text.trim(),
-          'masa_kerja_bulan': _masaBulanController.text.trim(),
+          'masa_kerja_bulan':
+              DropdownOptions.bulanKalender.indexOf(
+                    _masaBulanController.text.trim(),
+                  ) +
+                  1,
           'pejabat_pengesahan': _pejabatController.text.trim(),
           'nomor_dokumen': _nomorSkController.text.trim(),
           'tanggal_dokumen': Timestamp.fromDate(_tanggalSk!),
@@ -341,6 +349,8 @@ class _FormSkPangkatPageState extends State<FormSkPangkatPage> with SingleTicker
 
       if (!mounted) return;
       await _showSuccessDialog();
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
     } on SkDocumentException catch (error) {
       if (!mounted) return;
       _showMessage(error.message);
@@ -705,11 +715,15 @@ class _FormSkPangkatPageState extends State<FormSkPangkatPage> with SingleTicker
                                                           controller: _masaTahunController,
                                                           keyboardType: TextInputType.number,
                                                         ),
-                            _CompactTextField(
+                            _InputDropdownField(
                                                           label: 'MASA KERJA BULAN',
-                                                          hint: 'Masukkan masa kerja bulan',
+                                                          hint: 'Pilih bulan masa kerja',
                                                           controller: _masaBulanController,
-                                                          keyboardType: TextInputType.number,
+                                                          onOpen: () => _showOptions(
+                                                            title: 'Pilih Masa Kerja Bulan',
+                                                            options: DropdownOptions.bulanKalender,
+                                                            controller: _masaBulanController,
+                                                          ),
                                                         ),
                           ],
                         ),
@@ -1054,24 +1068,12 @@ class _HintHeaderDelegate extends SliverPersistentHeaderDelegate {
       color: Colors.transparent,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(18, 7, 18, 7),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(13),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(
-              sigmaX: 1.6,
-              sigmaY: 1.6,
-            ),
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(13, 8, 9, 8),
-              decoration: BoxDecoration(
-                color: const Color(0x40EDD59D),
-                borderRadius: BorderRadius.circular(13),
-                border: Border.all(
-                  color: const Color.fromARGB(129, 255, 255, 255),
-                  width: 1,
-                ),
-              ),
-              child: Row(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(13, 8, 9, 8),
+          decoration: AppTheme.glassHintDecoration(
+            radius: 13,
+          ),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               const Padding(
@@ -1118,9 +1120,7 @@ class _HintHeaderDelegate extends SliverPersistentHeaderDelegate {
                   ),
                 ),
               ),
-                ],
-              ),
-            ),
+            ],
           ),
         ),
       ),
@@ -1151,16 +1151,8 @@ class _FormSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFCF5),
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x36000000),
-            blurRadius: 5,
-            offset: Offset(0, 4),
-          ),
-        ],
+      decoration: AppTheme.glassSurfaceDecoration(
+        radius: 10,
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -1499,9 +1491,8 @@ class _PdfPickerField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String fileName = file?.name ?? 'Choose File';
-    final String? filePath = file?.path;
-    final bool canPreview =
-        filePath != null && filePath.trim().isNotEmpty;
+    final bytes = file?.bytes;
+    final bool canPreview = bytes != null && bytes.isNotEmpty;
 
     Future<void> openPreview() async {
       if (!canPreview) return;
@@ -1520,7 +1511,7 @@ class _PdfPickerField extends StatelessWidget {
       Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => PratinjauPdfPage(
-            filePath: filePath!,
+            fileBytes: bytes,
             fileName: file!.name,
             jenisSk: jenisSk,
             nomorDokumen: nomorDokumenBuilder(),

@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'notification_service.dart';
+import 'profile_completion_service.dart';
+
 class EmployeeSkItem {
   final String collection;
   final String documentId;
@@ -341,6 +344,16 @@ class SkCommentService {
     required String text,
   }) async {
     final _CurrentUserSnapshot current = await _currentUserSnapshot();
+    if (!current.isAdmin) {
+      try {
+        await ProfileCompletionService.instance.requireCompleteProfile(
+          actionLabel: 'mengirim komentar',
+        );
+      } on ProfileCompletionException catch (error) {
+        throw SkCommentException(error.message);
+      }
+    }
+
     final String cleanText = text.trim();
 
     if (cleanText.isEmpty) {
@@ -353,7 +366,8 @@ class SkCommentService {
       );
     }
 
-    await _db.collection('comments').add(<String, dynamic>{
+    final DocumentReference<Map<String, dynamic>> commentReference =
+        await _db.collection('comments').add(<String, dynamic>{
       'sk_id': skId.trim(),
       'owner_id': current.uid,
       'nama_pengguna': current.name,
@@ -361,6 +375,18 @@ class SkCommentService {
       'jumlah_balasan': 0,
       'created_at': FieldValue.serverTimestamp(),
     });
+
+    try {
+      await NotificationService.instance.notifyCommentAdded(
+        skKey: skId,
+        commentId: commentReference.id,
+        commentText: cleanText,
+        senderName: current.name,
+        senderIsAdmin: current.isAdmin,
+      );
+    } catch (_) {
+      // Komentar tetap tersimpan jika notifikasi gagal dibuat.
+    }
   }
 
   Future<void> addReply({
@@ -368,6 +394,16 @@ class SkCommentService {
     required String text,
   }) async {
     final _CurrentUserSnapshot current = await _currentUserSnapshot();
+    if (!current.isAdmin) {
+      try {
+        await ProfileCompletionService.instance.requireCompleteProfile(
+          actionLabel: 'mengirim balasan',
+        );
+      } on ProfileCompletionException catch (error) {
+        throw SkCommentException(error.message);
+      }
+    }
+
     final String cleanText = text.trim();
 
     if (cleanText.isEmpty) {
@@ -387,13 +423,26 @@ class SkCommentService {
       throw const SkCommentException('Komentar sudah tidak tersedia.');
     }
 
-    await _db.collection('replies').add(<String, dynamic>{
+    final DocumentReference<Map<String, dynamic>> replyReference =
+        await _db.collection('replies').add(<String, dynamic>{
       'comment_id': commentId.trim(),
       'owner_id': current.uid,
       'nama_pengguna': current.name,
       'isi_balasan': cleanText,
       'created_at': FieldValue.serverTimestamp(),
     });
+
+    try {
+      await NotificationService.instance.notifyReplyAdded(
+        commentId: commentId,
+        replyId: replyReference.id,
+        replyText: cleanText,
+        senderName: current.name,
+        senderIsAdmin: current.isAdmin,
+      );
+    } catch (_) {
+      // Balasan tetap tersimpan jika notifikasi gagal dibuat.
+    }
   }
 
   Future<void> deleteComment(SkCommentItem comment) async {

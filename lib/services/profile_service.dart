@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/profilepegawai_model.dart';
+import 'notification_service.dart';
 
 class PositionHistoryEntry {
   final String jabatan;
@@ -48,8 +49,14 @@ class EducationHistoryEntry {
     Map<String, dynamic> data,
   ) {
     return EducationHistoryEntry(
-      pendidikan: _readString(data['pendidikan']),
-      tahun: _readInt(data['tahun'] ?? data['tahun_lulus_pendidikan']),
+      pendidikan: _readString(
+        data['pendidikan'] ?? data['jenjang'],
+      ),
+      tahun: _readInt(
+        data['tahun'] ??
+            data['tahun_lulus'] ??
+            data['tahun_lulus_pendidikan'],
+      ),
     );
   }
 }
@@ -77,7 +84,9 @@ class TrainingHistoryEntry {
       latihanJabatan: _readString(
         data['latihan_jabatan'] ?? data['nama_diklat'],
       ),
-      tahun: _readInt(data['tahun'] ?? data['tahun_latihan_jabatan']),
+      tahun: _readInt(
+        data['tahun'] ?? data['tahun_latihan_jabatan'],
+      ),
     );
   }
 }
@@ -116,10 +125,6 @@ class ProfileExtendedData {
       latihanJabatan: profile.latihan_jabatan,
       tahunLatihanJabatan: profile.tahun_latihan_jabatan,
       positionHistory: <PositionHistoryEntry>[
-        PositionHistoryEntry(
-          jabatan: profile.jabatan_sekarang,
-          tahun: profile.tahun_jabatan_sekarang,
-        ),
         PositionHistoryEntry(
           jabatan: profile.jabatan_sebelumnya,
           tahun: profile.tahun_jabatan_sebelumnya,
@@ -163,20 +168,23 @@ class ProfileService {
 
     final List<PositionHistoryEntry> positionHistory =
         _readPositionHistory(data);
-    _addLegacyPositions(positionHistory, data);
-    _addUniquePosition(
-      positionHistory,
-      PositionHistoryEntry(
-        jabatan: fallbackProfile.jabatan_sekarang,
-        tahun: fallbackProfile.tahun_jabatan_sekarang,
-      ),
-    );
+    _addLegacyPreviousPosition(positionHistory, data);
     _addUniquePosition(
       positionHistory,
       PositionHistoryEntry(
         jabatan: fallbackProfile.jabatan_sebelumnya,
         tahun: fallbackProfile.tahun_jabatan_sebelumnya,
       ),
+    );
+    final List<PositionHistoryEntry> sortedPositions =
+        _sortAndDedupePositions(
+      positionHistory.where(
+        (PositionHistoryEntry item) => !_samePosition(
+          item,
+          jabatan: fallbackProfile.jabatan_sekarang,
+          tahun: fallbackProfile.tahun_jabatan_sekarang,
+        ),
+      ).toList(),
     );
 
     final List<EducationHistoryEntry> educationHistory =
@@ -193,14 +201,21 @@ class ProfileService {
         ),
       ),
     );
+    final List<EducationHistoryEntry> sortedEducation =
+        _sortAndDedupeEducation(educationHistory);
+    final EducationHistoryEntry? latestEducation =
+        _firstEducation(sortedEducation);
 
     final List<TrainingHistoryEntry> trainingHistory =
         _readTrainingHistory(data);
     _addUniqueTraining(
       trainingHistory,
       TrainingHistoryEntry(
-        latihanJabatan: _readString(
-          data['latihan_jabatan'] ?? fallbackProfile.latihan_jabatan,
+        latihanJabatan: _normalizeTrainingName(
+          _readString(
+            data['latihan_jabatan'] ??
+                fallbackProfile.latihan_jabatan,
+          ),
         ),
         tahun: _readInt(
           data['tahun_latihan_jabatan'] ??
@@ -208,42 +223,25 @@ class ProfileService {
         ),
       ),
     );
-
-    final String tempatLahir = _readString(
-      data['tempat_lahir'] ?? fallbackProfile.tempat_lahir,
-    );
-
-    final DateTime? tanggalLahir = _readDateTime(
-      data['tanggal_lahir'] ?? fallbackProfile.tanggal_lahir,
-    );
-
-    final String pendidikan = _readString(
-      data['pendidikan'] ?? fallbackProfile.pendidikan,
-    );
-    final int tahunPendidikan = _readInt(
-      data['tahun_lulus_pendidikan'] ??
-          fallbackProfile.tahun_lulus_pendidikan,
-    );
-
-    final String latihanJabatan = _readString(
-      data['latihan_jabatan'] ?? fallbackProfile.latihan_jabatan,
-    );
-    final int tahunLatihan = _readInt(
-      data['tahun_latihan_jabatan'] ??
-          fallbackProfile.tahun_latihan_jabatan,
-    );
+    final List<TrainingHistoryEntry> sortedTraining =
+        _sortAndDedupeTraining(trainingHistory);
+    final TrainingHistoryEntry? latestTraining =
+        _firstTraining(sortedTraining);
 
     return ProfileExtendedData(
-      tempatLahir: tempatLahir,
-      tanggalLahir: tanggalLahir,
-      pendidikan: pendidikan,
-      tahunLulusPendidikan: tahunPendidikan,
-      latihanJabatan: latihanJabatan,
-      tahunLatihanJabatan: tahunLatihan,
-      positionHistory: _sortAndDedupePositions(positionHistory),
-      educationHistory:
-          _sortAndDedupeEducation(educationHistory),
-      trainingHistory: _sortAndDedupeTraining(trainingHistory),
+      tempatLahir: _readString(
+        data['tempat_lahir'] ?? fallbackProfile.tempat_lahir,
+      ),
+      tanggalLahir: _readDateTime(
+        data['tanggal_lahir'] ?? fallbackProfile.tanggal_lahir,
+      ),
+      pendidikan: latestEducation?.pendidikan ?? '',
+      tahunLulusPendidikan: latestEducation?.tahun ?? 0,
+      latihanJabatan: latestTraining?.latihanJabatan ?? '',
+      tahunLatihanJabatan: latestTraining?.tahun ?? 0,
+      positionHistory: sortedPositions,
+      educationHistory: sortedEducation,
+      trainingHistory: sortedTraining,
     );
   }
 
@@ -259,17 +257,19 @@ class ProfileService {
     required DateTime? tanggalLahir,
     required String jabatanSekarang,
     required int tahunJabatanSekarang,
-    required String pendidikan,
-    required int tahunLulusPendidikan,
+    required List<PositionHistoryEntry> positionHistory,
+    required bool movePreviousPositionToHistory,
+    required List<EducationHistoryEntry> educationHistory,
     required String latihanJabatan,
     required int tahunLatihanJabatan,
     required String fotoProfil,
   }) async {
     final String cleanUid = uid.trim();
     final String cleanCurrentPosition = jabatanSekarang.trim();
-    final String cleanEducation = pendidikan.trim();
-    final String cleanTraining = latihanJabatan.trim();
     final String cleanBirthPlace = tempatLahir.trim();
+    final String cleanTraining = _normalizeTrainingName(
+      latihanJabatan,
+    );
 
     if (cleanUid.isEmpty) {
       throw const ProfileServiceException(
@@ -289,6 +289,24 @@ class ProfileService {
       );
     }
 
+    if (noTelepon.trim().isEmpty) {
+      throw const ProfileServiceException(
+        'Nomor telepon wajib diisi.',
+      );
+    }
+
+    if (statusKepegawaian.trim().isEmpty) {
+      throw const ProfileServiceException(
+        'Status kepegawaian wajib dipilih.',
+      );
+    }
+
+    if (pangkat.trim().isEmpty) {
+      throw const ProfileServiceException(
+        'Pangkat wajib diisi.',
+      );
+    }
+
     if (cleanCurrentPosition.isEmpty ||
         !_isValidYear(tahunJabatanSekarang)) {
       throw const ProfileServiceException(
@@ -296,18 +314,51 @@ class ProfileService {
       );
     }
 
-    if (cleanBirthPlace.isEmpty != (tanggalLahir == null)) {
+    if (cleanBirthPlace.isEmpty || tanggalLahir == null) {
       throw const ProfileServiceException(
-        'Tempat dan tanggal lahir harus diisi bersama-sama.',
+        'Tempat dan tanggal lahir wajib diisi.',
       );
     }
 
-    if (!_isOptionalNameYearPairValid(
-      cleanEducation,
-      tahunLulusPendidikan,
+    if (positionHistory.isEmpty) {
+      throw const ProfileServiceException(
+        'Tambahkan minimal satu riwayat jabatan sebelumnya.',
+      );
+    }
+
+    if (educationHistory.isEmpty) {
+      throw const ProfileServiceException(
+        'Tambahkan minimal satu riwayat pendidikan.',
+      );
+    }
+
+    final List<PositionHistoryEntry> basePositionHistory =
+        positionHistory
+            .where(
+              (PositionHistoryEntry item) => !_samePosition(
+                item,
+                jabatan: cleanCurrentPosition,
+                tahun: tahunJabatanSekarang,
+              ),
+            )
+            .toList();
+
+    if (positionHistory.any(
+      (PositionHistoryEntry item) => !item.isValid,
     )) {
       throw const ProfileServiceException(
-        'Pendidikan terakhir dan tahun lulus harus diisi bersama-sama.',
+        'Setiap riwayat jabatan harus memiliki nama jabatan dan tahun yang valid.',
+      );
+    }
+
+    final List<EducationHistoryEntry> sortedEducation =
+        _sortAndDedupeEducation(educationHistory);
+
+    if (educationHistory.any(
+      (EducationHistoryEntry item) => !item.isValid,
+    )) {
+      throw const ProfileServiceException(
+        'Setiap riwayat pendidikan harus memiliki jenjang dan tahun lulus yang valid.',
       );
     }
 
@@ -316,9 +367,12 @@ class ProfileService {
       tahunLatihanJabatan,
     )) {
       throw const ProfileServiceException(
-        'Nama diklat dan tahun diklat harus diisi bersama-sama.',
+        'Nama diklat dan tahun diklat harus diisi bersama-sama, atau kosongkan keduanya.',
       );
     }
+
+    final EducationHistoryEntry? latestEducation =
+        _firstEducation(sortedEducation);
 
     final DocumentReference<Map<String, dynamic>> userRef =
         _db.collection(_usersCollection).doc(cleanUid);
@@ -340,51 +394,50 @@ class ProfileService {
       final Map<String, dynamic> oldData =
           profileSnapshot.data() ?? <String, dynamic>{};
 
-      final List<PositionHistoryEntry> positionHistory =
-          _readPositionHistory(oldData);
-      _addLegacyPositions(positionHistory, oldData);
-      _addUniquePosition(
-        positionHistory,
-        PositionHistoryEntry(
-          jabatan: cleanCurrentPosition,
-          tahun: tahunJabatanSekarang,
-        ),
-      );
+      final String oldCurrentPosition =
+          _readString(oldData['jabatan_sekarang']);
+      final int oldCurrentPositionYear =
+          _readInt(oldData['tahun_jabatan_sekarang']);
+      final bool currentPositionChanged =
+          oldCurrentPosition.trim().toLowerCase() !=
+                  cleanCurrentPosition.toLowerCase() ||
+              oldCurrentPositionYear != tahunJabatanSekarang;
+
+      final List<PositionHistoryEntry> nextPositionHistory =
+          List<PositionHistoryEntry>.from(basePositionHistory);
+
+      if (movePreviousPositionToHistory &&
+          currentPositionChanged) {
+        _addUniquePosition(
+          nextPositionHistory,
+          PositionHistoryEntry(
+            jabatan: oldCurrentPosition,
+            tahun: oldCurrentPositionYear,
+          ),
+        );
+      }
+
       final List<PositionHistoryEntry> sortedPositions =
-          _sortAndDedupePositions(positionHistory);
-
+          _sortAndDedupePositions(
+        nextPositionHistory.where(
+          (PositionHistoryEntry item) => !_samePosition(
+            item,
+            jabatan: cleanCurrentPosition,
+            tahun: tahunJabatanSekarang,
+          ),
+        ).toList(),
+      );
       final PositionHistoryEntry? previousPosition =
-          _findPreviousPosition(
-        sortedPositions,
-        currentPosition: cleanCurrentPosition,
-        currentYear: tahunJabatanSekarang,
-      );
-
-      final List<EducationHistoryEntry> educationHistory =
-          _readEducationHistory(oldData);
-      _addUniqueEducation(
-        educationHistory,
-        EducationHistoryEntry(
-          pendidikan: _readString(oldData['pendidikan']),
-          tahun: _readInt(oldData['tahun_lulus_pendidikan']),
-        ),
-      );
-      _addUniqueEducation(
-        educationHistory,
-        EducationHistoryEntry(
-          pendidikan: cleanEducation,
-          tahun: tahunLulusPendidikan,
-        ),
-      );
-      final List<EducationHistoryEntry> sortedEducation =
-          _sortAndDedupeEducation(educationHistory);
+          _firstPosition(sortedPositions);
 
       final List<TrainingHistoryEntry> trainingHistory =
           _readTrainingHistory(oldData);
       _addUniqueTraining(
         trainingHistory,
         TrainingHistoryEntry(
-          latihanJabatan: _readString(oldData['latihan_jabatan']),
+          latihanJabatan: _normalizeTrainingName(
+            _readString(oldData['latihan_jabatan']),
+          ),
           tahun: _readInt(oldData['tahun_latihan_jabatan']),
         ),
       );
@@ -397,6 +450,8 @@ class ProfileService {
       );
       final List<TrainingHistoryEntry> sortedTraining =
           _sortAndDedupeTraining(trainingHistory);
+      final TrainingHistoryEntry? latestTraining =
+          _firstTraining(sortedTraining);
 
       transaction.update(
         userRef,
@@ -428,12 +483,11 @@ class ProfileService {
           'jabatan_sekarang': cleanCurrentPosition,
           'tahun_jabatan_sekarang': tahunJabatanSekarang,
           'jabatan_sebelumnya': previousPosition?.jabatan ?? '',
-          'tahun_jabatan_sebelumnya':
-              previousPosition?.tahun ?? 0,
-          'pendidikan': cleanEducation,
-          'tahun_lulus_pendidikan': tahunLulusPendidikan,
-          'latihan_jabatan': cleanTraining,
-          'tahun_latihan_jabatan': tahunLatihanJabatan,
+          'tahun_jabatan_sebelumnya': previousPosition?.tahun ?? 0,
+          'pendidikan': latestEducation?.pendidikan ?? '',
+          'tahun_lulus_pendidikan': latestEducation?.tahun ?? 0,
+          'latihan_jabatan': latestTraining?.latihanJabatan ?? '',
+          'tahun_latihan_jabatan': latestTraining?.tahun ?? 0,
           'riwayat_jabatan': sortedPositions
               .map((PositionHistoryEntry item) => item.toMap())
               .toList(),
@@ -449,6 +503,14 @@ class ProfileService {
         SetOptions(merge: true),
       );
     });
+
+    try {
+      await NotificationService.instance.notifyProfileUpdated(
+        ownerId: cleanUid,
+      );
+    } catch (_) {
+      // Penyimpanan profil tidak dibatalkan jika notifikasi gagal dibuat.
+    }
   }
 
   static List<PositionHistoryEntry> _readPositionHistory(
@@ -505,17 +567,10 @@ class ProfileService {
         .toList();
   }
 
-  static void _addLegacyPositions(
+  static void _addLegacyPreviousPosition(
     List<PositionHistoryEntry> history,
     Map<String, dynamic> data,
   ) {
-    _addUniquePosition(
-      history,
-      PositionHistoryEntry(
-        jabatan: _readString(data['jabatan_sekarang']),
-        tahun: _readInt(data['tahun_jabatan_sekarang']),
-      ),
-    );
     _addUniquePosition(
       history,
       PositionHistoryEntry(
@@ -523,21 +578,6 @@ class ProfileService {
         tahun: _readInt(data['tahun_jabatan_sebelumnya']),
       ),
     );
-  }
-
-  static PositionHistoryEntry? _findPreviousPosition(
-    List<PositionHistoryEntry> history, {
-    required String currentPosition,
-    required int currentYear,
-  }) {
-    final String currentKey =
-        '${currentPosition.trim().toLowerCase()}|$currentYear';
-
-    for (final PositionHistoryEntry item in history) {
-      if (_positionKey(item) != currentKey) return item;
-    }
-
-    return null;
   }
 
   static List<PositionHistoryEntry> _sortAndDedupePositions(
@@ -554,15 +594,14 @@ class ProfileService {
       );
     }
 
-    final List<PositionHistoryEntry> result =
-        unique.values.toList()
-          ..sort((PositionHistoryEntry a, PositionHistoryEntry b) {
-            final int yearCompare = b.tahun.compareTo(a.tahun);
-            if (yearCompare != 0) return yearCompare;
-            return a.jabatan.toLowerCase().compareTo(
-                  b.jabatan.toLowerCase(),
-                );
-          });
+    final List<PositionHistoryEntry> result = unique.values.toList()
+      ..sort((PositionHistoryEntry a, PositionHistoryEntry b) {
+        final int yearCompare = b.tahun.compareTo(a.tahun);
+        if (yearCompare != 0) return yearCompare;
+        return a.jabatan.toLowerCase().compareTo(
+              b.jabatan.toLowerCase(),
+            );
+      });
     return result;
   }
 
@@ -574,21 +613,25 @@ class ProfileService {
 
     for (final EducationHistoryEntry item in source) {
       if (!item.isValid) continue;
-      unique[_educationKey(item)] = EducationHistoryEntry(
-        pendidikan: item.pendidikan.trim(),
+      final String level = item.pendidikan.trim();
+      unique[level.toLowerCase()] = EducationHistoryEntry(
+        pendidikan: level,
         tahun: item.tahun,
       );
     }
 
-    final List<EducationHistoryEntry> result =
-        unique.values.toList()
-          ..sort((EducationHistoryEntry a, EducationHistoryEntry b) {
-            final int yearCompare = b.tahun.compareTo(a.tahun);
-            if (yearCompare != 0) return yearCompare;
-            return a.pendidikan.toLowerCase().compareTo(
-                  b.pendidikan.toLowerCase(),
-                );
-          });
+    final List<EducationHistoryEntry> result = unique.values.toList()
+      ..sort((EducationHistoryEntry a, EducationHistoryEntry b) {
+        final int yearCompare = b.tahun.compareTo(a.tahun);
+        if (yearCompare != 0) return yearCompare;
+        final int rankCompare = _educationRank(
+          b.pendidikan,
+        ).compareTo(_educationRank(a.pendidikan));
+        if (rankCompare != 0) return rankCompare;
+        return a.pendidikan.toLowerCase().compareTo(
+              b.pendidikan.toLowerCase(),
+            );
+      });
     return result;
   }
 
@@ -599,22 +642,25 @@ class ProfileService {
         <String, TrainingHistoryEntry>{};
 
     for (final TrainingHistoryEntry item in source) {
-      if (!item.isValid) continue;
-      unique[_trainingKey(item)] = TrainingHistoryEntry(
-        latihanJabatan: item.latihanJabatan.trim(),
+      final String normalizedName = _normalizeTrainingName(
+        item.latihanJabatan,
+      );
+      final TrainingHistoryEntry normalized = TrainingHistoryEntry(
+        latihanJabatan: normalizedName,
         tahun: item.tahun,
       );
+      if (!normalized.isValid) continue;
+      unique[_trainingKey(normalized)] = normalized;
     }
 
-    final List<TrainingHistoryEntry> result =
-        unique.values.toList()
-          ..sort((TrainingHistoryEntry a, TrainingHistoryEntry b) {
-            final int yearCompare = b.tahun.compareTo(a.tahun);
-            if (yearCompare != 0) return yearCompare;
-            return a.latihanJabatan.toLowerCase().compareTo(
-                  b.latihanJabatan.toLowerCase(),
-                );
-          });
+    final List<TrainingHistoryEntry> result = unique.values.toList()
+      ..sort((TrainingHistoryEntry a, TrainingHistoryEntry b) {
+        final int yearCompare = b.tahun.compareTo(a.tahun);
+        if (yearCompare != 0) return yearCompare;
+        return a.latihanJabatan.toLowerCase().compareTo(
+              b.latihanJabatan.toLowerCase(),
+            );
+      });
     return result;
   }
 
@@ -637,13 +683,18 @@ class ProfileService {
     EducationHistoryEntry item,
   ) {
     if (!item.isValid) return;
-    final String key = _educationKey(item);
-    if (!history.any(
+    final String levelKey = item.pendidikan.trim().toLowerCase();
+    final int existingIndex = history.indexWhere(
       (EducationHistoryEntry current) =>
-          _educationKey(current) == key,
-    )) {
-      history.add(item);
+          current.pendidikan.trim().toLowerCase() == levelKey,
+    );
+    if (existingIndex >= 0) {
+      if (item.tahun >= history[existingIndex].tahun) {
+        history[existingIndex] = item;
+      }
+      return;
     }
+    history.add(item);
   }
 
   static void _addUniqueTraining(
@@ -660,11 +711,75 @@ class ProfileService {
     }
   }
 
+  static PositionHistoryEntry? _firstPosition(
+    List<PositionHistoryEntry> values,
+  ) {
+    return values.isEmpty ? null : values.first;
+  }
+
+  static EducationHistoryEntry? _firstEducation(
+    List<EducationHistoryEntry> values,
+  ) {
+    return values.isEmpty ? null : values.first;
+  }
+
+  static TrainingHistoryEntry? _firstTraining(
+    List<TrainingHistoryEntry> values,
+  ) {
+    return values.isEmpty ? null : values.first;
+  }
+
+  static int _educationRank(String value) {
+    switch (value.trim().toUpperCase()) {
+      case 'SD':
+        return 1;
+      case 'SMP':
+        return 2;
+      case 'SMA/SMK':
+        return 3;
+      case 'D-I':
+        return 4;
+      case 'D-II':
+        return 5;
+      case 'D-III':
+        return 6;
+      case 'D-IV':
+        return 7;
+      case 'S-1':
+        return 8;
+      case 'S-2':
+        return 9;
+      case 'S-3':
+        return 10;
+      default:
+        return 0;
+    }
+  }
+
+  static String _normalizeTrainingName(String value) {
+    final String clean = value.trim();
+    final String lower = clean.toLowerCase();
+    if (lower.isEmpty ||
+        lower == '-' ||
+        lower == 'tidak ada' ||
+        lower == 'belum ada') {
+      return '';
+    }
+    return clean;
+  }
+
+  static bool _samePosition(
+    PositionHistoryEntry item, {
+    required String jabatan,
+    required int tahun,
+  }) {
+    return item.jabatan.trim().toLowerCase() ==
+            jabatan.trim().toLowerCase() &&
+        item.tahun == tahun;
+  }
+
   static String _positionKey(PositionHistoryEntry item) =>
       '${item.jabatan.trim().toLowerCase()}|${item.tahun}';
-
-  static String _educationKey(EducationHistoryEntry item) =>
-      '${item.pendidikan.trim().toLowerCase()}|${item.tahun}';
 
   static String _trainingKey(TrainingHistoryEntry item) =>
       '${item.latihanJabatan.trim().toLowerCase()}|${item.tahun}';
