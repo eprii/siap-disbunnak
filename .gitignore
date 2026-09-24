@@ -46,3 +46,6 @@ app.*.map.json
 
 .firebase.zip
 /android/java_pid17964.hprof
+lib/pages/kelola_data/form_sk/v
+siap-disbunnak.zip
+lib/pages/home/home_page.dart.old
