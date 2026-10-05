@@ -2686,6 +2686,7 @@ class _EditTextField extends StatelessWidget {
     required this.label,
     required this.hint,
     required this.controller,
+    // ignore: unused_element_parameter
     this.readOnly = false,
     this.requiredField = true,
     this.obscureText = false,
@@ -2845,6 +2846,7 @@ class _EditDropdownField extends StatelessWidget {
     required this.hint,
     required this.controller,
     required this.onOpen,
+    // ignore: unused_element_parameter
     this.requiredField = true,
   });
 

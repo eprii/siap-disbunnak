@@ -471,7 +471,9 @@ class ProfileService {
           'jenis_asn': jenisAsn.trim(),
           'pangkat': pangkat.trim(),
           'tempat_lahir': cleanBirthPlace,
+          // ignore: unnecessary_null_comparison
           'tanggal_lahir': tanggalLahir == null
+              // ignore: dead_code
               ? null
               : Timestamp.fromDate(
                   DateTime(
