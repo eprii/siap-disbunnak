@@ -49,3 +49,4 @@ app.*.map.json
 lib/pages/kelola_data/form_sk/v
 siap-disbunnak.zip
 lib/pages/home/home_page.dart.old
+lib_and_assets_folder.zip
