@@ -394,7 +394,7 @@ class _FormSkAngkaKreditPageState extends State<FormSkAngkaKreditPage> with Sing
           context: context,
           barrierDismissible: false,
           barrierLabel: 'Konfirmasi simpan',
-          barrierColor: Colors.black.withOpacity(0.46),
+          barrierColor: Colors.black.withValues(alpha: 0.46),
           transitionDuration: const Duration(milliseconds: 220),
           pageBuilder: (_, _, _) {
             return Center(
@@ -506,7 +506,7 @@ class _FormSkAngkaKreditPageState extends State<FormSkAngkaKreditPage> with Sing
       context: context,
       barrierDismissible: false,
       barrierLabel: 'Data berhasil disimpan',
-      barrierColor: Colors.black.withOpacity(0.46),
+      barrierColor: Colors.black.withValues(alpha: 0.46),
       transitionDuration: const Duration(milliseconds: 220),
       pageBuilder: (_, _, _) {
         return Center(
