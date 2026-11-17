@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -121,7 +122,11 @@ class SkDocumentService {
           collection: cleanCollection,
           documentId: documentRef.id,
         );
-      } catch (_) {
+      } catch (error, stackTrace) {
+        debugPrint(
+          '[SIAP][Notification] Gagal membuat notifikasi SK baru: $error',
+        );
+        debugPrintStack(stackTrace: stackTrace);
         // Notifikasi bersifat best effort dan tidak membatalkan upload SK.
       }
 

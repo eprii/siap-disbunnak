@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'notification_service.dart';
@@ -384,7 +385,11 @@ class SkCommentService {
         senderName: current.name,
         senderIsAdmin: current.isAdmin,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[SIAP][Notification] Gagal membuat notifikasi komentar: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
       // Komentar tetap tersimpan jika notifikasi gagal dibuat.
     }
   }
@@ -440,7 +445,11 @@ class SkCommentService {
         senderName: current.name,
         senderIsAdmin: current.isAdmin,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[SIAP][Notification] Gagal membuat notifikasi balasan: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
       // Balasan tetap tersimpan jika notifikasi gagal dibuat.
     }
   }

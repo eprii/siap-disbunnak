@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/profilepegawai_model.dart';
 import 'notification_service.dart';
@@ -510,7 +511,11 @@ class ProfileService {
       await NotificationService.instance.notifyProfileUpdated(
         ownerId: cleanUid,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[SIAP][Notification] Gagal membuat notifikasi perubahan profil: $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
       // Penyimpanan profil tidak dibatalkan jika notifikasi gagal dibuat.
     }
   }

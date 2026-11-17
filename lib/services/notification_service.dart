@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -10,6 +12,7 @@ class NotificationService {
   static final NotificationService instance = NotificationService._();
 
   static const String _collectionName = 'notifications';
+  static const String _dedupCollectionName = 'notification_dedup';
 
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -375,24 +378,8 @@ class NotificationService {
       );
     }
 
-    final String cleanDedupKey = dedupKey.trim();
-    final DocumentReference<Map<String, dynamic>> reference =
-        cleanDedupKey.isEmpty
-            ? _notifications.doc()
-            : _notifications.doc(
-                _notificationDocumentId(
-                  cleanRecipientId,
-                  cleanDedupKey,
-                ),
-              );
-
-    if (cleanDedupKey.isNotEmpty) {
-      final DocumentSnapshot<Map<String, dynamic>> existing =
-          await reference.get();
-      if (existing.exists) return;
-    }
-
-    await reference.set(<String, dynamic>{
+    final String cleanDedupKey = _limit(dedupKey.trim(), 300);
+    final Map<String, dynamic> notificationData = <String, dynamic>{
       'recipient_id': cleanRecipientId,
       'recipient_role': _normalizeRole(recipientRole),
       'sender_id': senderId,
@@ -406,7 +393,47 @@ class NotificationService {
       'is_read': false,
       'created_at': FieldValue.serverTimestamp(),
       'read_at': null,
-      'dedup_key': _limit(cleanDedupKey, 300),
+      'dedup_key': cleanDedupKey,
+    };
+
+    // Notifikasi tanpa dedupKey selalu dibuat sebagai dokumen baru.
+    if (cleanDedupKey.isEmpty) {
+      await _notifications.add(notificationData);
+      return;
+    }
+
+    // Marker disimpan di ruang milik pengirim agar pengirim dapat memeriksa
+    // duplikasi tanpa membaca dokumen notifikasi milik penerima.
+    final String markerId = _notificationDedupId(
+      cleanRecipientId,
+      cleanDedupKey,
+    );
+    final DocumentReference<Map<String, dynamic>> markerReference = _db
+        .collection(_dedupCollectionName)
+        .doc(senderId)
+        .collection('keys')
+        .doc(markerId);
+    final DocumentReference<Map<String, dynamic>> notificationReference =
+        _notifications.doc();
+
+    // Transaksi membuat marker dan notifikasi secara atomik. Jika proses yang
+    // sama terpanggil lagi, marker sudah ada sehingga notifikasi tidak dibuat
+    // dua kali. Pemeriksaan marker diizinkan oleh rules untuk pengirimnya saja.
+    await _db.runTransaction<void>((Transaction transaction) async {
+      final DocumentSnapshot<Map<String, dynamic>> markerSnapshot =
+          await transaction.get(markerReference);
+
+      if (markerSnapshot.exists) return;
+
+      transaction.set(markerReference, <String, dynamic>{
+        'sender_id': senderId,
+        'recipient_id': cleanRecipientId,
+        'dedup_key': cleanDedupKey,
+        'notification_id': notificationReference.id,
+        'created_at': FieldValue.serverTimestamp(),
+      });
+
+      transaction.set(notificationReference, notificationData);
     });
   }
 
@@ -527,16 +554,15 @@ class NotificationService {
     return 'Dokumen SK';
   }
 
-  static String _notificationDocumentId(
+  static String _notificationDedupId(
     String recipientId,
     String dedupKey,
   ) {
-    final String value = '$recipientId:$dedupKey'
-        .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')
-        .replaceAll(RegExp(r'_+'), '_');
-
-    if (value.length <= 600) return value;
-    return value.substring(0, 600);
+    // Base64 URL-safe menghasilkan ID stabil tanpa karakter '/' yang dapat
+    // mengubah struktur path Firestore. Panjang input dibatasi sebelumnya.
+    return base64Url
+        .encode(utf8.encode('$recipientId:$dedupKey'))
+        .replaceAll('=', '');
   }
 
   static String _normalizeRole(String value) {
